@@ -1,0 +1,6 @@
+torch
+torchaudio
+transformers
+librosa
+accelerate
+numpy

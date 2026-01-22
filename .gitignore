@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.vscode/
+.idea/
+.DS_Store
+
+# ComfyUI and models
+models/
+*.bin
+*.pt
+*.pth
+*.safetensors
+*.onnx
+
+# Data
+input/
+output/
+temp/
