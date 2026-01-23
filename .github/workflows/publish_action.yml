@@ -1,7 +1,6 @@
-name: Publish to Comfy Registry
-
+name: Publish to Comfy registry
 on:
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -10,13 +9,12 @@ on:
 
 jobs:
   publish-node:
-    name: Publish Custom Node to Registry
+    name: Publish Custom Node to registry
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
         uses: actions/checkout@v4
-      
       - name: Publish Custom Node
         uses: Comfy-Org/publish-node-action@main
-        env:
-          COMFY_API_TOKEN: ${{ secrets.REGISTRY_ACCESS_TOKEN }}
+        with:
+          personal_access_token: ${{ secrets.REGISTRY_ACCESS_TOKEN }} ## Add your own personal access token to your Github Repository secrets and reference it here.
