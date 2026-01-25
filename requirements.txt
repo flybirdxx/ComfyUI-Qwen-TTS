@@ -10,3 +10,5 @@ tiktoken
 sentencepiece
 sox
 huggingface_hub
+onnxruntime
+onnxruntime-gpu
