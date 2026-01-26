@@ -10,6 +10,9 @@ from typing import Dict, Any, List, Optional, Tuple, Union
 import folder_paths
 import types
 
+from comfy import model_management
+from comfy.utils import ProgressBar
+
 
 # Common languages list for UI
 DEMO_LANGUAGES = [
@@ -104,65 +107,72 @@ ATTENTION_OPTIONS = ["auto", "sage_attn", "flash_attn", "sdpa", "eager"]
 def check_attention_implementation():
     """Check available attention implementations and return in priority order."""
     available = []
-    
+
     try:
         from sageattention import sageattn
         available.append("sage_attn")
-        print(f"✅ [Qwen3-TTS] sage_attn available (sageattention package)")
     except ImportError:
         pass
-    
+
     try:
         import flash_attn
         available.append("flash_attn")
-        print(f"✅ [Qwen3-TTS] flash_attn available")
     except ImportError:
         pass
-    
+
     available.append("sdpa")
-    print(f"✅ [Qwen3-TTS] sdpa available (PyTorch built-in)")
-    
     available.append("eager")
-    print(f"✅ [Qwen3-TTS] eager attention available (always available)")
-    
+
     return available
 
 def get_attention_implementation(selection: str) -> str:
     """Get the actual attention implementation based on selection and availability."""
     available = check_attention_implementation()
-    
+
     if selection == "auto":
         priority = ["sage_attn", "flash_attn", "sdpa", "eager"]
         for attn in priority:
             if attn in available:
-                print(f"🔍 [Qwen3-TTS] Auto-selected attention: {attn}")
+                print(f"[Qwen3-TTS] Auto-selected attention: {attn}")
                 return attn
         return "eager"
     else:
         if selection in available:
-            print(f"🔍 [Qwen3-TTS] Using requested attention: {selection}")
+            print(f"[Qwen3-TTS] Using attention: {selection}")
             return selection
         else:
-            print(f"⚠️ [Qwen3-TTS] Requested attention '{selection}' not available, falling back to sdpa")
+            print(f"[Qwen3-TTS] Requested attention '{selection}' not available, falling back to sdpa")
             if "sdpa" in available:
                 return "sdpa"
             return "eager"
 
 
-def unload_cached_model():
-    """Unload all cached models and clear GPU memory."""
+def unload_cached_model(cache_key=None):
+    """Unload cached model(s) and clear GPU memory.
+
+    Args:
+        cache_key: If provided, only unload that specific model.
+                  If None, unload all cached models.
+    """
     global _MODEL_CACHE
-    if _MODEL_CACHE:
-        print(f"🗑️ [Qwen3-TTS] Unloading {_MODEL_CACHE.__len__()} cached model(s)...")
+
+    if cache_key and cache_key in _MODEL_CACHE:
+        print(f"[Qwen3-TTS] Unloading model: {cache_key}...")
+        del _MODEL_CACHE[cache_key]
+    elif _MODEL_CACHE:
+        print(f"[Qwen3-TTS] Unloading {_MODEL_CACHE.__len__()} cached model(s)...")
         _MODEL_CACHE.clear()
-    
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-        torch.cuda.synchronize()
-    
+
+    model_management.soft_empty_cache()
+
     import gc
     gc.collect()
-    print(f"✅ [Qwen3-TTS] Model cache and GPU memory cleared")
+    gc.collect()
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+
+    print(f"[Qwen3-TTS] Model cache and GPU memory cleared")
 
 
 def apply_qwen3_patches(model):
@@ -299,9 +309,10 @@ def load_qwen_model(model_type: str, model_choice: str, device: str, precision: 
     cache_key = (model_type, model_choice, device, precision, attn_impl)
     if cache_key in _MODEL_CACHE:
         return _MODEL_CACHE[cache_key]
-    
-    # Clear old cache
-    _MODEL_CACHE.clear()
+
+    # Clear old cache only when adding a new model with different config
+    if _MODEL_CACHE:
+        _MODEL_CACHE.clear()
     
     # --- 1. Determine search directories ---
     base_paths = []
@@ -494,7 +505,8 @@ class VoiceDesignNode:
         if not text or not instruct:
             raise RuntimeError("Text and instruction description are required")
 
-        # Track previous attention for cache invalidation
+        pbar = ProgressBar(3)
+
         global _MODEL_CACHE
         previous_attention = None
         for key in _MODEL_CACHE:
@@ -502,17 +514,18 @@ class VoiceDesignNode:
                 previous_attention = key[4] if len(key) > 4 else None
                 break
 
-        # Load model
+        pbar.update_absolute(1, 3, None)
+
         model = load_qwen_model("VoiceDesign", model_choice, device, precision, attention, unload_model_after_generate, previous_attention)
 
-        # Set random seeds
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         import numpy as np
         np.random.seed(seed % (2**32))
 
-        # Perform generation
+        pbar.update_absolute(2, 3, None)
+
         mapped_lang = LANGUAGE_MAP.get(language, "auto")
         wavs, sr = model.generate_voice_design(
             text=text,
@@ -525,17 +538,18 @@ class VoiceDesignNode:
             repetition_penalty=repetition_penalty,
         )
 
+        pbar.update_absolute(3, 3, None)
+
         if isinstance(wavs, list) and len(wavs) > 0:
             waveform = torch.from_numpy(wavs[0]).float()
             if waveform.ndim > 1:
                 waveform = waveform.squeeze()
             waveform = waveform.unsqueeze(0).unsqueeze(0)
             audio_data = {"waveform": waveform, "sample_rate": sr}
-            
-            # Unload model if requested
+
             if unload_model_after_generate and hasattr(model, '_unload_callback') and model._unload_callback:
                 model._unload_callback()
-            
+
             return (audio_data,)
         raise RuntimeError("Invalid audio data generated")
 
@@ -668,25 +682,28 @@ class VoiceCloneNode:
                  unload_model_after_generate: bool = False) -> Tuple[Dict[str, Any]]:
         if ref_audio is None and voice_clone_prompt is None:
             raise RuntimeError("Either reference audio or voice clone prompt is required")
-        
-        # Track previous attention for cache invalidation
+
+        pbar = ProgressBar(3)
+
         global _MODEL_CACHE
         previous_attention = None
         for key in _MODEL_CACHE:
             if key[0] == "Base":
                 previous_attention = key[4] if len(key) > 4 else None
                 break
-        
-        # Load model
+
+        pbar.update_absolute(1, 3, None)
+
         model = load_qwen_model("Base", model_choice, device, precision, attention, unload_model_after_generate, previous_attention)
 
-        # Set random seeds
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         import numpy as np
         np.random.seed(seed % (2**32))
-        
+
+        pbar.update_absolute(2, 3, None)
+
         audio_tuple = None
         if ref_audio is not None:
             if isinstance(ref_audio, dict):
@@ -696,8 +713,7 @@ class VoiceCloneNode:
 
         try:
             mapped_lang = LANGUAGE_MAP.get(language, "auto")
-            
-            # Check if voice_clone_prompt is provided
+
             voice_clone_prompt_param = None
             ref_audio_param = None
             if voice_clone_prompt is not None:
@@ -723,19 +739,18 @@ class VoiceCloneNode:
         except Exception as e:
             raise RuntimeError(f"Generation failed: {e}")
 
+        pbar.update_absolute(3, 3, None)
+
         if isinstance(wavs, list) and len(wavs) > 0:
             waveform = torch.from_numpy(wavs[0]).float()
-            # Ensure waveform is 1D [samples]
             if waveform.ndim > 1:
                 waveform = waveform.squeeze()
-            # Convert to ComfyUI format: [batch, channels, samples]
             waveform = waveform.unsqueeze(0).unsqueeze(0)
             audio_data = {"waveform": waveform, "sample_rate": sr}
-            
-            # Unload model if requested
+
             if unload_model_after_generate and hasattr(model, '_unload_callback') and model._unload_callback:
                 model._unload_callback()
-            
+
             return (audio_data,)
         raise RuntimeError("Invalid audio data generated")
 
@@ -779,23 +794,26 @@ class CustomVoiceNode:
         if not text or not speaker:
             raise RuntimeError("Text and speaker are required")
 
-        # Track previous attention for cache invalidation
+        pbar = ProgressBar(3)
+
         global _MODEL_CACHE
         previous_attention = None
         for key in _MODEL_CACHE:
             if key[0] == "CustomVoice":
                 previous_attention = key[4] if len(key) > 4 else None
                 break
-        
-        # Load model
+
+        pbar.update_absolute(1, 3, None)
+
         model = load_qwen_model("CustomVoice", model_choice, device, precision, attention, unload_model_after_generate, previous_attention)
 
-        # Set random seeds
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
         import numpy as np
         np.random.seed(seed % (2**32))
+
+        pbar.update_absolute(2, 3, None)
 
         mapped_lang = LANGUAGE_MAP.get(language, "auto")
         wavs, sr = model.generate_custom_voice(
@@ -810,19 +828,18 @@ class CustomVoiceNode:
             repetition_penalty=repetition_penalty,
         )
 
+        pbar.update_absolute(3, 3, None)
+
         if isinstance(wavs, list) and len(wavs) > 0:
             waveform = torch.from_numpy(wavs[0]).float()
-            # Ensure waveform is 1D [samples]
             if waveform.ndim > 1:
                 waveform = waveform.squeeze()
-            # Convert to ComfyUI format: [batch, channels, samples]
             waveform = waveform.unsqueeze(0).unsqueeze(0)
             audio_data = {"waveform": waveform, "sample_rate": sr}
-            
-            # Unload model if requested
+
             if unload_model_after_generate and hasattr(model, '_unload_callback') and model._unload_callback:
                 model._unload_callback()
-            
+
             return (audio_data,)
         raise RuntimeError("Invalid audio data generated")
 
@@ -858,30 +875,33 @@ class VoiceClonePromptNode:
     def create_prompt(self, ref_audio: Dict[str, Any], ref_text: str, model_choice: str, device: str, precision: str, attention: str, x_vector_only: bool = False, unload_model_after_generate: bool = False) -> Tuple[Any]:
         if ref_audio is None:
             raise RuntimeError("Reference audio is required")
-        
-        # Track previous attention for cache invalidation
+
+        pbar = ProgressBar(3)
+
         global _MODEL_CACHE
         previous_attention = None
         for key in _MODEL_CACHE:
             if key[0] == "Base":
                 previous_attention = key[4] if len(key) > 4 else None
                 break
-        
-        # Load model (usually Base model)
+
+        pbar.update_absolute(1, 3, None)
+
         model = load_qwen_model("Base", model_choice, device, precision, attention, unload_model_after_generate, previous_attention)
 
-        # Reuse VoiceCloneNode's audio parsing logic
+        pbar.update_absolute(2, 3, None)
+
         vcn = VoiceCloneNode()
         audio_tuple = vcn._audio_tensor_to_tuple(ref_audio)
 
-        # Extract prompt
         prompt_items = model.create_voice_clone_prompt(
             ref_audio=audio_tuple,
             ref_text=ref_text if ref_text and ref_text.strip() else None,
             x_vector_only_mode=x_vector_only,
         )
 
-        # Unload model if requested
+        pbar.update_absolute(3, 3, None)
+
         if unload_model_after_generate and hasattr(model, '_unload_callback') and model._unload_callback:
             model._unload_callback()
 
@@ -971,7 +991,8 @@ class DialogueInferenceNode:
         if not script or not role_bank:
             raise RuntimeError("Script and Role Bank are required")
 
-        # Track previous attention for cache invalidation
+        pbar = ProgressBar(3)
+
         global _MODEL_CACHE
         previous_attention = None
         for key in _MODEL_CACHE:
@@ -979,10 +1000,10 @@ class DialogueInferenceNode:
                 previous_attention = key[4] if len(key) > 4 else None
                 break
 
-        # Load model
+        pbar.update_absolute(1, 3, None)
+
         model = load_qwen_model("Base", model_choice, device, precision, attention, unload_model_after_generate, previous_attention)
 
-        # Set random seeds
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
@@ -990,75 +1011,59 @@ class DialogueInferenceNode:
         np.random.seed(seed % (2**32))
 
         lines = script.strip().split("\n")
-        
-        texts_to_gen = []
-        prompts_to_gen = [] # This must be a flat list of VoiceClonePromptItem
-        langs_to_gen = []
-        pauses_to_gen = [] 
-        
-        mapped_lang = LANGUAGE_MAP.get(language, "auto")
-        
-        # Internal tag for processing splits (Renamed to [break=] to separate from user manual input)
-        pause_pattern = r'\[break=([\d\.]+)\]'
 
-        print(f"🎬 [Qwen3-TTS] Preparing batched inference for {len(lines)} lines...")
+        texts_to_gen = []
+        prompts_to_gen = []
+        langs_to_gen = []
+        pauses_to_gen = []
+
+        mapped_lang = LANGUAGE_MAP.get(language, "auto")
+
+        pause_pattern = r'\[break=([\d\.]+)\]'
 
         for idx, line in enumerate(lines):
             line = line.strip()
             if not line or ":" not in line and "：" not in line:
                 continue
-            
-            # Robust parser: find the first occurring colon (English or Chinese)
+
             pos_en = line.find(":")
             pos_cn = line.find("：")
-            
+
             if pos_en == -1 and pos_cn == -1:
                 continue
-            
+
             if pos_en != -1 and (pos_cn == -1 or pos_en < pos_cn):
                 role_name, text = line.split(":", 1)
             else:
                 role_name, text = line.split("：", 1)
-            
+
             role_name = role_name.strip()
             text = text.strip()
-            
+
             if role_name not in role_bank:
-                print(f"⚠️ [Qwen3-TTS] Role '{role_name}' not found in Role Bank, skipping line: {line[:20]}...")
                 continue
-            # role_bank[role_name] is a List[VoiceClonePromptItem] (from create_voice_clone_prompt)
             role_prompts = role_bank[role_name]
             current_prompt = role_prompts[0] if isinstance(role_prompts, list) else role_prompts
 
-            # --- AUTO-PUNCTUATION LOGIC ---
-            # Replaced [pause=] with [break=] to use internal system only.
-            # Using regex lookahead (?!\d) to avoid replacing punctuation inside numbers (e.g. 1.5, -5)
-            
-            # 1. Period
             if period_pause > 0:
                 text = re.sub(r'\.(?!\d)', f'. [break={period_pause}]', text)
-            
-            # 2. Comma
+
             if comma_pause > 0:
                 text = re.sub(r',(?!\d)', f', [break={comma_pause}]', text)
-                
-            # 3. Question Mark (Escaped as \?)
+
             if question_pause > 0:
                 text = re.sub(r'\?(?!\d)', f'? [break={question_pause}]', text)
 
-            # 4. Hyphen (Escaped as \-, or literal -)
             if hyphen_pause > 0:
                 text = re.sub(r'-(?!\d)', f'- [break={hyphen_pause}]', text)
 
-            # --- SPLIT & PARSE LOGIC ---
             parts = re.split(pause_pattern, text)
-            
+
             for i in range(0, len(parts), 2):
                 segment_text = parts[i].strip()
                 if not segment_text: continue
 
-                # Default pause for this segment is 0 (unless we found a tag)
-                current_segment_pause = 0.0 
+                current_segment_pause = 0.0
                 if i + 1 < len(parts):
                     try:
                         current_segment_pause = float(parts[i+1])
@@ -1069,27 +1074,32 @@ class DialogueInferenceNode:
                 langs_to_gen.append(mapped_lang)
                 pauses_to_gen.append(current_segment_pause)
 
-            # Apply the "pause_linebreak" setting to the very last segment of the line
             if pauses_to_gen:
                 pauses_to_gen[-1] += pause_linebreak
 
         if not texts_to_gen:
             raise RuntimeError("No valid dialogue lines found matching Role Bank.")
 
+        num_lines = len(texts_to_gen)
+        num_chunks = (num_lines + batch_size - 1) // batch_size
+        total_stages = num_chunks + 1
+        pbar = ProgressBar(total_stages)
+
+        pbar.update_absolute(1, total_stages, None)
+
         try:
             results = []
-            num_lines = len(texts_to_gen)
             sr = 24000
 
-            # Micro-matching: process in chunks to save VRAM
             for i in range(0, num_lines, batch_size):
                 chunk_texts = texts_to_gen[i:i + batch_size]
                 chunk_prompts = prompts_to_gen[i:i + batch_size]
                 chunk_langs = langs_to_gen[i:i + batch_size]
-                chunk_pauses = pauses_to_gen[i:i + batch_size] 
-                
-                print(f"🎙️ [Qwen3-TTS] Running batched inference for chunk {i//batch_size + 1}...")
-                
+                chunk_pauses = pauses_to_gen[i:i + batch_size]
+
+                current_chunk = i // batch_size + 1
+                print(f"[Qwen3-TTS] Running batched inference for chunk {current_chunk} of {num_chunks}...")
+
                 wavs_list, sr = model.generate_voice_clone(
                     text=chunk_texts,
                     language=chunk_langs,
@@ -1100,34 +1110,36 @@ class DialogueInferenceNode:
                     temperature=temperature,
                     repetition_penalty=repetition_penalty,
                 )
-                
+
                 for j, wav in enumerate(wavs_list):
                     waveform = torch.from_numpy(wav).float()
-                    # Enforce mono [1, 1, samples]
                     if waveform.ndim == 1:
                         waveform = waveform.unsqueeze(0).unsqueeze(0)
                     elif waveform.ndim == 2:
                         waveform = waveform.unsqueeze(0)
                         if waveform.shape[1] > 1:
                             waveform = torch.mean(waveform, dim=1, keepdim=True)
-                    
+
                     results.append(waveform)
 
-                    # Add the specific silence for this segment (comma, period, or line break)
                     this_pause = chunk_pauses[j]
                     if this_pause > 0:
                         silence_len = int(this_pause * sr)
                         silence = torch.zeros((1, 1, silence_len))
                         results.append(silence)
-                # Cleanup cache after each chunk
+
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                    
+
+                pbar.update_absolute(current_chunk + 1, total_stages, None)
+
         except Exception as e:
             raise RuntimeError(f"Dialogue generation failed during chunked inference: {e}")
 
         if not results:
             raise RuntimeError("No dialogue lines were successfully generated.")
+
+        pbar.update_absolute(total_stages, total_stages, None)
 
         if merge_outputs:
             # Concatenate along the sample dimension (last one)
