@@ -1631,6 +1631,10 @@ class Qwen3TTSTalkerForConditionalGeneration(Qwen3TTSTalkerTextPreTrainedModel, 
             codec_ids = None
         # Generate
         else:
+            # Fix: Ensure input_ids has batch dimension [Batch, 1]
+            if input_ids is not None and input_ids.ndim == 1:
+                input_ids = input_ids.unsqueeze(0)
+            
             last_id_hidden = self.get_input_embeddings()(input_ids)
             predictor_result = self.code_predictor.generate(
                 inputs_embeds=torch.cat((past_hidden, last_id_hidden), dim=1),
@@ -1639,13 +1643,20 @@ class Qwen3TTSTalkerForConditionalGeneration(Qwen3TTSTalkerTextPreTrainedModel, 
                 top_p=subtalker_top_p,
                 top_k=subtalker_top_k,
                 temperature=subtalker_temperature,
-                output_hidden_states=True,
+                use_cache=False,
+                output_hidden_states=False,
                 return_dict_in_generate=True,
             )
-            codec_ids = torch.cat((input_ids, predictor_result.sequences), dim=-1)
+            
+            # Fix: Ensure predictor_result.sequences has batch dimension [Batch, Groups-1]
+            p_seq = predictor_result.sequences
+            if p_seq.ndim == 1:
+                p_seq = p_seq.unsqueeze(0)
+            
+            codec_ids = torch.cat((input_ids, p_seq), dim=-1)
             codec_hiddens = torch.cat(
                 [last_id_hidden]
-                + [self.code_predictor.get_input_embeddings()[i](predictor_result.sequences[..., i:i+1]) for i in range(self.config.num_code_groups - 1)],
+                + [self.code_predictor.get_input_embeddings()[i](p_seq[..., i:i+1]) for i in range(self.config.num_code_groups - 1)],
                 dim=1,
             )
             inputs_embeds = codec_hiddens.sum(1, keepdim=True)
@@ -1689,19 +1700,23 @@ class Qwen3TTSTalkerForConditionalGeneration(Qwen3TTSTalkerTextPreTrainedModel, 
 
         hidden_states = outputs.last_hidden_state
         logits = self.codec_head(hidden_states)
-
+        
+        # Memory optimization: explicitly move side-channel tensors to CPU immediately
+        # This prevents GPU VRAM accumulation during long generation steps
+        res_hidden = (outputs.hidden_states[-1].detach().cpu() if output_hidden_states and outputs.hidden_states else None)
+        res_codec = codec_ids.detach().cpu() if codec_ids is not None else None
+        
         loss = None
         if labels is not None:
             loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **kwargs)
-
 
         return Qwen3TTSTalkerOutputWithPast(
             loss=loss,
             logits=logits,
             past_key_values=outputs.past_key_values,
-            hidden_states=(outputs.hidden_states, codec_ids),
+            hidden_states=( (res_hidden,) if res_hidden is not None else (None,), res_codec),
             attentions=outputs.attentions,
-            past_hidden=hidden_states[:, -1:, :],
+            past_hidden=hidden_states[:, -1:, :].detach(),
             generation_step=generation_step + 1,
             trailing_text_hidden=trailing_text_hidden,
             tts_pad_embed=tts_pad_embed,
@@ -2226,19 +2241,57 @@ class Qwen3TTSForConditionalGeneration(Qwen3TTSPreTrainedModel, GenerationMixin)
             **talker_kwargs,
         )
 
-        talker_codes = torch.stack([hid[-1] for hid in talker_result.hidden_states if hid[-1] is not None], dim=1)
-        talker_hidden_states = torch.cat([hid[0][-1][:, -1:] for hid in talker_result.hidden_states], dim=1)[:, :-1]
+        # Memory cleanup: collect results and move to CPU immediately
+        # talker_result.hidden_states is a tuple of ( (res_hidden,), codec_ids ) for each step
+        if not talker_result.hidden_states:
+            return [], []
+
+        all_codec_ids = []
+        for hid in talker_result.hidden_states:
+            if hid[-1] is not None:
+                # These were already moved to CPU in forward
+                all_codec_ids.append(hid[-1])
         
-        first_codebook = talker_codes[:, :, 0]
-        is_stop_token = (first_codebook ==  self.config.talker_config.codec_eos_token_id)
-        stop_indices = torch.argmax(is_stop_token.int(), dim=1)
-        has_stop_token = is_stop_token.any(dim=1)
-        effective_lengths = torch.where(has_stop_token, stop_indices, talker_codes.shape[1])
+        if not all_codec_ids:
+            return [], []
+
+        # Stack into [Batch, Seq, Groups]
+        talker_codes = torch.stack(all_codec_ids, dim=1)
         
-        talker_codes_list = [talker_codes[i, :length, ] for i, length in enumerate(effective_lengths)]
-        talker_hidden_states_list = [talker_hidden_states[i, :length, :] for i, length in enumerate(effective_lengths)]
+        # Only collect hidden states if explicitly requested via side-channel
+        talker_hidden_states_list = []
+        if talker_result.hidden_states[0][0] is not None and talker_result.hidden_states[0][0][0] is not None:
+            all_hiddens = []
+            for hid in talker_result.hidden_states:
+                if hid[0][0] is not None:
+                    # These were already moved to CPU in forward
+                    all_hiddens.append(hid[0][0])
+            if all_hiddens:
+                talker_hidden_states_seq = torch.cat(all_hiddens, dim=1) # [Batch, Seq, Dim]
+                for i in range(talker_hidden_states_seq.shape[0]):
+                    talker_hidden_states_list.append(talker_hidden_states_seq[i])
         
-        return talker_codes_list, talker_hidden_states_list
+        # Aggressive memory cleanup
+        del talker_result
+        del talker_input_embeds
+        del talker_attention_mask
+        del trailing_text_hiddens
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        # Extract effective lengths for each batch item
+        final_codes = []
+        for i in range(talker_codes.shape[0]):
+            codes = talker_codes[i] # [Seq, Groups]
+            first_codes = codes[:, 0]
+            is_stop = (first_codes == self.config.talker_config.codec_eos_token_id)
+            if is_stop.any():
+                idx = torch.argmax(is_stop.int())
+                final_codes.append(codes[:idx])
+            else:
+                final_codes.append(codes)
+
+        return final_codes, talker_hidden_states_list
 
 __all__ = [
     "Qwen3TTSForConditionalGeneration",

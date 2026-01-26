@@ -432,7 +432,8 @@ class Qwen3TTSTalkerConfig(PretrainedConfig):
         if code_predictor_config is None:
             code_predictor_config = {}
             self.code_predictor_config = Qwen3TTSTalkerCodePredictorConfig()
-            logger.info("code_predictor_config is None. Initializing code_predictor model with default values")
+            # Silencing this log as it triggers on normal config copies during generation
+            # logger.info("code_predictor_config is None. Initializing code_predictor model with default values")
         elif isinstance(code_predictor_config, Qwen3TTSTalkerCodePredictorConfig):
             self.code_predictor_config = code_predictor_config
         else:

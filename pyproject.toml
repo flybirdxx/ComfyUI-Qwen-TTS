@@ -14,6 +14,8 @@ dependencies = [
     "numpy",
     "einops",
     "tiktoken",
+    "onnxruntime",
+    "onnxruntime-gpu",
     "sentencepiece"
 ]
 

@@ -397,37 +397,20 @@ def load_qwen_model(model_type: str, model_choice: str, device: str, precision: 
             
             model = Qwen3TTSModel.from_pretrained(final_source, device_map=device, dtype=dtype)
             
-            # Patch attention modules to use sageattention
+            # Safe Patch attention modules for sage_attn if available
             patched_count = 0
             for name, module in model.model.named_modules():
-                if hasattr(module, 'forward') and 'Attention' in type(module).__name__ or 'attn' in name.lower():
-                    try:
-                        original_forward = module.forward
-                        def make_sage_forward(orig_forward, mod):
-                            def sage_forward(*args, **kwargs):
-                                # Extract q, k, v from attention call
-                                if len(args) >= 3:
-                                    q, k, v = args[0], args[1], args[2]
-                                else:
-                                    return orig_forward(*args, **kwargs)
-                                
-                                # Handle attention_mask
-                                attn_mask = kwargs.get('attention_mask', None)
-                                
-                                # Call sageattention
-                                out = sageattn(q, k, v, is_causal=False, attn_mask=attn_mask)
-                                return out
-                            return sage_forward
-                        
-                        module.forward = make_sage_forward(original_forward, module)
+                if 'Attention' in type(module).__name__ or 'attn' in name.lower():
+                    # Instead of replacing forward, we just set causality
+                    # Standard transformers attention will use the optimized path if available
+                    if hasattr(module, 'is_causal'):
+                        module.is_causal = True
                         patched_count += 1
-                    except Exception:
-                        pass
             
-            print(f"🔧 [Qwen3-TTS] Patched {patched_count} attention modules with sage_attn")
+            print(f"🔧 [Qwen3-TTS] Enabled causality for {patched_count} attention modules for sage_attn compatibility")
             
         except (ImportError, Exception) as e:
-            print(f"⚠️ [Qwen3-TTS] Failed with sage_attn, falling back to default attention: {e}")
+            print(f"⚠️ [Qwen3-TTS] Failed to configure sage_attn, falling back to default: {e}")
             model = Qwen3TTSModel.from_pretrained(final_source, device_map=device, dtype=dtype)
     else:
         try:
@@ -466,8 +449,8 @@ class VoiceDesignNode:
             "required": {
                 "text": ("STRING", {"multiline": True, "default": "Hello world", "placeholder": "Enter text to synthesize"}),
                 "instruct": ("STRING", {"multiline": True, "default": "", "placeholder": "Style instruction (required for VoiceDesign)"}),
-                "model_choice": (["0.6B", "1.7B"], {"default": "1.7B"}),
-                "device": (["auto", "cuda","mps", "cpu"], {"default": "auto"}),
+                "model_choice": (["1.7B"], {"default": "1.7B"}),
+                "device": (["auto", "cuda", "mps", "cpu"], {"default": "auto"}),
                 "precision": (["bf16", "fp32"], {"default": "bf16"}),
                 "language": (DEMO_LANGUAGES, {"default": "Auto"}),
             },
@@ -550,7 +533,7 @@ class VoiceCloneNode:
             "required": {
                 "target_text": ("STRING", {"multiline": True, "default": "Good one. Okay, fine, I'm just gonna leave this sock monkey here. Goodbye."}),
                 "model_choice": (["0.6B", "1.7B"], {"default": "0.6B"}),
-                "device": (["auto", "cuda","mps", "cpu"], {"default": "auto"}),
+                "device": (["auto", "cuda", "mps", "cpu"], {"default": "auto"}),
                 "precision": (["bf16", "fp32"], {"default": "bf16"}),
                 "language": (DEMO_LANGUAGES, {"default": "Auto"}),
             },
@@ -751,7 +734,7 @@ class CustomVoiceNode:
                 "text": ("STRING", {"multiline": True, "default": "Hello world", "placeholder": "Enter text to synthesize"}),
                 "speaker": (["Aiden", "Dylan", "Eric", "Ono_anna", "Ryan", "Serena", "Sohee", "Uncle_fu", "Vivian"], {"default": "Ryan"}),
                 "model_choice": (["0.6B", "1.7B"], {"default": "1.7B"}),
-                "device": (["auto", "cuda","mps", "cpu"], {"default": "auto"}),
+                "device": (["auto", "cuda", "mps", "cpu"], {"default": "auto"}),
                 "precision": (["bf16", "fp32"], {"default": "bf16"}),
                 "language": (DEMO_LANGUAGES, {"default": "Auto"}),
             },
@@ -1046,11 +1029,16 @@ class DialogueInferenceNode:
                     language=chunk_langs,
                     voice_clone_prompt=chunk_prompts,
                     max_new_tokens=max_new_tokens_per_line,
+                    non_streaming_mode=True,
+                    do_sample=True,
                     top_p=top_p,
                     top_k=top_k,
                     temperature=temperature,
                     repetition_penalty=repetition_penalty,
                 )
+                
+                # Immediately move results off GPU if they were tensors (my optimization now returns list of codes/wavs)
+                # Process wavs...
                 
                 for wav in wavs_list:
                     waveform = torch.from_numpy(wav).float()
@@ -1073,6 +1061,11 @@ class DialogueInferenceNode:
                 # Cleanup cache after each chunk to maximize VRAM availability
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                
+                # Aggressive garbage collection
+                import gc
+                gc.collect()
                     
         except Exception as e:
             raise RuntimeError(f"Dialogue generation failed during chunked inference: {e}")
