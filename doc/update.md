@@ -1,5 +1,17 @@
 # Update Log
 
+## 2026-01-29
+- **Fine-tuning Support**: Added support for loading custom fine-tuned models in `VoiceCloneNode` and `CustomVoiceNode`.
+  - Added `custom_model_path` input: specific absolute path to model folder.
+  - Added `custom_speaker_name` input to `CustomVoiceNode`: allows calling specific speaker IDs from fine-tuned models.
+
+![Custom Model Loading UI](/doc/example3.png)
+
+> **⚠️ Note / 说明**:
+> Currently, the fine-tuning feature is experimental. Official Qwen3-TTS only supports fine-tuning the Base model, and the results are often inferior to direct zero-shot cloning with `VoiceCloneNode`. For experimentation only.
+>
+> 目前微调功能仅为占位/实验性支持。官方目前仅支持微调 Base 模型，实际效果往往不如直接使用 `VoiceCloneNode` 进行零样本克隆。仅供感兴趣的用户尝试。
+
 ## 2026-01-27
 - **Optimization**: Streamlined the `LoadSpeaker` node and removed redundant parameters.
 - **Compatibility**: Fixed loading errors for local `.qvp` files when using PyTorch 2.6+.
@@ -97,13 +109,3 @@ If requested attention is unavailable, falls back to sdpa → eager with console
 - **VoiceClonePromptNode**: Extract and reuse voice features from reference audio
   - Enables "once extracted, multiple uses" workflow
   - Improves efficiency for batch generation with same voice
-  
-- **DialogueInferenceNode**: Multi-role dialogue synthesis
-  - Supports complex multi-speaker scenarios
-  - Batch processing with configurable chunk size
-  - Automatic silence insertion between dialogue lines
-
-### Improvements
-- Refactored audio normalization into shared utility
-- Applied monkeypatch globally during model loading
-- Enhanced error handling for audio input types

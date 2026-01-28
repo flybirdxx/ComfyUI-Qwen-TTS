@@ -1,0 +1,778 @@
+{
+  "id": "e5a7e76f-d6b5-4d03-8649-66a85cacce43",
+  "revision": 0,
+  "last_node_id": 7,
+  "last_link_id": 1,
+  "nodes": [
+    {
+      "id": 3,
+      "type": "FB_Qwen3TTSTrain",
+      "pos": [
+        830,
+        -3550
+      ],
+      "size": [
+        410,
+        430
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "init_model",
+          "name": "init_model",
+          "type": "COMBO",
+          "widget": {
+            "name": "init_model"
+          },
+          "link": null
+        },
+        {
+          "label": "tokenizer",
+          "name": "tokenizer",
+          "type": "COMBO",
+          "widget": {
+            "name": "tokenizer"
+          },
+          "link": null
+        },
+        {
+          "label": "audio_folder",
+          "name": "audio_folder",
+          "type": "STRING",
+          "widget": {
+            "name": "audio_folder"
+          },
+          "link": null
+        },
+        {
+          "label": "output_dir",
+          "name": "output_dir",
+          "type": "STRING",
+          "widget": {
+            "name": "output_dir"
+          },
+          "link": null
+        },
+        {
+          "label": "speaker_name",
+          "name": "speaker_name",
+          "type": "STRING",
+          "widget": {
+            "name": "speaker_name"
+          },
+          "link": null
+        },
+        {
+          "label": "test_text",
+          "name": "test_text",
+          "type": "STRING",
+          "widget": {
+            "name": "test_text"
+          },
+          "link": null
+        },
+        {
+          "label": "language",
+          "name": "language",
+          "type": "COMBO",
+          "widget": {
+            "name": "language"
+          },
+          "link": null
+        },
+        {
+          "label": "learning_rate",
+          "name": "learning_rate",
+          "type": "FLOAT",
+          "widget": {
+            "name": "learning_rate"
+          },
+          "link": null
+        },
+        {
+          "label": "num_epochs",
+          "name": "num_epochs",
+          "type": "INT",
+          "widget": {
+            "name": "num_epochs"
+          },
+          "link": null
+        },
+        {
+          "label": "batch_size",
+          "name": "batch_size",
+          "type": "INT",
+          "widget": {
+            "name": "batch_size"
+          },
+          "link": null
+        },
+        {
+          "label": "gradient_accumulation_steps",
+          "name": "gradient_accumulation_steps",
+          "type": "INT",
+          "widget": {
+            "name": "gradient_accumulation_steps"
+          },
+          "link": null
+        },
+        {
+          "label": "validate_every",
+          "name": "validate_every",
+          "type": "INT",
+          "widget": {
+            "name": "validate_every"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "checkpoint_path",
+          "name": "checkpoint_path",
+          "type": "STRING",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "qwen3-tts-comfyui",
+        "ver": "5e97d3cce967c842aeee02854725c371c8a101d7",
+        "Node name for S&R": "FB_Qwen3TTSTrain"
+      },
+      "widgets_values": [
+        "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "Qwen/Qwen3-TTS-Tokenizer-12Hz",
+        "",
+        "F:\\ComfyUI-aki-v1.7\\ComfyUI\\output\\qwen3tts_finetune",
+        "new_speaker",
+        "Hello, this is a test of my new voice.",
+        "English",
+        0.00002,
+        10,
+        1,
+        4,
+        2
+      ]
+    },
+    {
+      "id": 5,
+      "type": "MarkdownNote",
+      "pos": [
+        390,
+        -3310
+      ],
+      "size": [
+        420,
+        200
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "EN",
+      "properties": {},
+      "widgets_values": [
+        "# Qwen3-TTS-0.6/1.7 Fine-Tuning\n- audio_folder: Path to audio dataset\n- output_dir: Path to save fine-tuned model\n- speaker_name: Speaker name (similar to built-in voices like custom_voice)\n- test_text: Sample audio text content (currently not implemented for training samples)\n- learning_rate: Learning rate, recommended 2e-5/2e-6\n- num_epochs: Number of training epochs\n- batch_size: Default 1 (16G test may cause OOM)\n- gradient_accumulation_steps: Gradient accumulation, trading time for space\n- validate_every: Validation frequency, saving model and generating test audio every X epochs (currently not implemented)"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 4,
+      "type": "MarkdownNote",
+      "pos": [
+        390,
+        -3580
+      ],
+      "size": [
+        420,
+        220
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "title": "ZH",
+      "properties": {},
+      "widgets_values": [
+        "# Qwen3-TTS-0.6/1.7微调\n- audio_folder: 音频数据集路径\n- output_dir: 微调模型保存路径\n- speaker_name: speaker名字(类似custom_voice的内置语音)\n- test_text: 采样音频文本内容(目前训练采样未实现)|\n- learning_rate: 学习率,推荐2e-5/2e-6\n- num_epochs: 训练轮数\n- batch_size: 默认1(16G测试2会OOM)\n- gradient_accumulation_steps: 梯度累积,时间换空间\n- validate_every: 验证频率,每训练多少个 Epoch 就保存一次模型并生成一次测试音频(当前未实装)"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 2,
+      "type": "PreviewAudio",
+      "pos": [
+        1830,
+        -3530
+      ],
+      "size": [
+        270,
+        88
+      ],
+      "flags": {},
+      "order": 6,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "link": 1
+        },
+        {
+          "label": "audioUI",
+          "name": "audioUI",
+          "type": "AUDIO_UI",
+          "widget": {
+            "name": "audioUI"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.8.2",
+        "Node name for S&R": "PreviewAudio"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 6,
+      "type": "MarkdownNote",
+      "pos": [
+        1790,
+        -3330
+      ],
+      "size": [
+        380,
+        140
+      ],
+      "flags": {
+        "pinned": true
+      },
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "```\n从custom_model_path和custom_speaker_name输出微调的模型路径和speaker_name即可生成音频,但是目前不支持指令控制,官方未放出相关训练代码\n```\n```\nOutput the fine-tuned model path and speaker_name from custom_model_path and custom_speaker_name to generate audio. However, command control is currently unsupported, and the official training code has not been released.\n```"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 1,
+      "type": "FB_Qwen3TTSCustomVoice",
+      "pos": [
+        1340,
+        -3540
+      ],
+      "size": [
+        420,
+        670
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "text",
+          "name": "text",
+          "type": "STRING",
+          "widget": {
+            "name": "text"
+          },
+          "link": null
+        },
+        {
+          "label": "speaker",
+          "name": "speaker",
+          "type": "COMBO",
+          "widget": {
+            "name": "speaker"
+          },
+          "link": null
+        },
+        {
+          "label": "model_choice",
+          "name": "model_choice",
+          "type": "COMBO",
+          "widget": {
+            "name": "model_choice"
+          },
+          "link": null
+        },
+        {
+          "label": "device",
+          "name": "device",
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          },
+          "link": null
+        },
+        {
+          "label": "precision",
+          "name": "precision",
+          "type": "COMBO",
+          "widget": {
+            "name": "precision"
+          },
+          "link": null
+        },
+        {
+          "label": "language",
+          "name": "language",
+          "type": "COMBO",
+          "widget": {
+            "name": "language"
+          },
+          "link": null
+        },
+        {
+          "label": "seed",
+          "name": "seed",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "label": "instruct",
+          "name": "instruct",
+          "shape": 7,
+          "type": "STRING",
+          "widget": {
+            "name": "instruct"
+          },
+          "link": null
+        },
+        {
+          "label": "max_new_tokens",
+          "name": "max_new_tokens",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "max_new_tokens"
+          },
+          "link": null
+        },
+        {
+          "label": "top_p",
+          "name": "top_p",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "top_p"
+          },
+          "link": null
+        },
+        {
+          "label": "top_k",
+          "name": "top_k",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "top_k"
+          },
+          "link": null
+        },
+        {
+          "label": "temperature",
+          "name": "temperature",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "temperature"
+          },
+          "link": null
+        },
+        {
+          "label": "repetition_penalty",
+          "name": "repetition_penalty",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "repetition_penalty"
+          },
+          "link": null
+        },
+        {
+          "label": "attention",
+          "name": "attention",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "attention"
+          },
+          "link": null
+        },
+        {
+          "label": "unload_model_after_generate",
+          "name": "unload_model_after_generate",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "unload_model_after_generate"
+          },
+          "link": null
+        },
+        {
+          "label": "custom_model_path",
+          "name": "custom_model_path",
+          "shape": 7,
+          "type": "STRING",
+          "widget": {
+            "name": "custom_model_path"
+          },
+          "link": null
+        },
+        {
+          "label": "custom_speaker_name",
+          "name": "custom_speaker_name",
+          "shape": 7,
+          "type": "STRING",
+          "widget": {
+            "name": "custom_speaker_name"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "links": [
+            1
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "qwen3-tts-comfyui",
+        "ver": "5e97d3cce967c842aeee02854725c371c8a101d7",
+        "Node name for S&R": "FB_Qwen3TTSCustomVoice"
+      },
+      "widgets_values": [
+        "我跟我闺蜜看电影就特别有画面感。就你知道吗，一紧张我就忍不住吃爆米花，吃得特别快，然后手里那杯可乐也跟着晃，差点就洒了，真的差一点点。然后旁边那个人就突然来一句，嘘——声音压得特别低。哎我当下那个情绪，既想笑又有点气，太尴尬了。",
+        "Ryan",
+        "1.7B",
+        "cuda",
+        "bf16",
+        "Auto",
+        1055431895977112,
+        "randomize",
+        "模拟成熟性感的御姐音色，声音略带磁性且沉稳，语速不快不慢，语调充满自信和一丝挑逗，尾音可以稍微拖长并上扬，给人一种游刃有余的掌控感",
+        2048,
+        0.8,
+        20,
+        1,
+        1.05,
+        "auto",
+        true,
+        "D:\\RH\\checkpoint-epoch-9",
+        "贞贞"
+      ]
+    },
+    {
+      "id": 7,
+      "type": "FB_Qwen3TTSVoiceClone",
+      "pos": [
+        2220,
+        -3480
+      ],
+      "size": [
+        400,
+        522
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 4,
+      "inputs": [
+        {
+          "label": "ref_audio",
+          "name": "ref_audio",
+          "shape": 7,
+          "type": "AUDIO",
+          "link": null
+        },
+        {
+          "label": "voice_clone_prompt",
+          "name": "voice_clone_prompt",
+          "shape": 7,
+          "type": "VOICE_CLONE_PROMPT",
+          "link": null
+        },
+        {
+          "label": "target_text",
+          "name": "target_text",
+          "type": "STRING",
+          "widget": {
+            "name": "target_text"
+          },
+          "link": null
+        },
+        {
+          "label": "model_choice",
+          "name": "model_choice",
+          "type": "COMBO",
+          "widget": {
+            "name": "model_choice"
+          },
+          "link": null
+        },
+        {
+          "label": "device",
+          "name": "device",
+          "type": "COMBO",
+          "widget": {
+            "name": "device"
+          },
+          "link": null
+        },
+        {
+          "label": "precision",
+          "name": "precision",
+          "type": "COMBO",
+          "widget": {
+            "name": "precision"
+          },
+          "link": null
+        },
+        {
+          "label": "language",
+          "name": "language",
+          "type": "COMBO",
+          "widget": {
+            "name": "language"
+          },
+          "link": null
+        },
+        {
+          "label": "ref_text",
+          "name": "ref_text",
+          "shape": 7,
+          "type": "STRING",
+          "widget": {
+            "name": "ref_text"
+          },
+          "link": null
+        },
+        {
+          "label": "seed",
+          "name": "seed",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "seed"
+          },
+          "link": null
+        },
+        {
+          "label": "max_new_tokens",
+          "name": "max_new_tokens",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "max_new_tokens"
+          },
+          "link": null
+        },
+        {
+          "label": "top_p",
+          "name": "top_p",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "top_p"
+          },
+          "link": null
+        },
+        {
+          "label": "top_k",
+          "name": "top_k",
+          "shape": 7,
+          "type": "INT",
+          "widget": {
+            "name": "top_k"
+          },
+          "link": null
+        },
+        {
+          "label": "temperature",
+          "name": "temperature",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "temperature"
+          },
+          "link": null
+        },
+        {
+          "label": "repetition_penalty",
+          "name": "repetition_penalty",
+          "shape": 7,
+          "type": "FLOAT",
+          "widget": {
+            "name": "repetition_penalty"
+          },
+          "link": null
+        },
+        {
+          "label": "x_vector_only",
+          "name": "x_vector_only",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "x_vector_only"
+          },
+          "link": null
+        },
+        {
+          "label": "attention",
+          "name": "attention",
+          "shape": 7,
+          "type": "COMBO",
+          "widget": {
+            "name": "attention"
+          },
+          "link": null
+        },
+        {
+          "label": "unload_model_after_generate",
+          "name": "unload_model_after_generate",
+          "shape": 7,
+          "type": "BOOLEAN",
+          "widget": {
+            "name": "unload_model_after_generate"
+          },
+          "link": null
+        },
+        {
+          "label": "custom_model_path",
+          "name": "custom_model_path",
+          "shape": 7,
+          "type": "STRING",
+          "widget": {
+            "name": "custom_model_path"
+          },
+          "link": null
+        }
+      ],
+      "outputs": [
+        {
+          "label": "audio",
+          "name": "audio",
+          "type": "AUDIO",
+          "links": null
+        }
+      ],
+      "properties": {
+        "cnr_id": "qwen3-tts-comfyui",
+        "ver": "5e97d3cce967c842aeee02854725c371c8a101d7",
+        "Node name for S&R": "FB_Qwen3TTSVoiceClone"
+      },
+      "widgets_values": [
+        "Good one. Okay, fine, I'm just gonna leave this sock monkey here. Goodbye.",
+        "0.6B",
+        "auto",
+        "bf16",
+        "Auto",
+        "",
+        0,
+        "randomize",
+        2048,
+        0.8,
+        20,
+        1,
+        1.05,
+        false,
+        "auto",
+        false,
+        "D:\\RH\\checkpoint-epoch-9"
+      ]
+    }
+  ],
+  "links": [
+    [
+      1,
+      1,
+      0,
+      2,
+      0,
+      "AUDIO"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "Step2",
+      "bounding": [
+        1330,
+        -3610,
+        1420,
+        740
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "Step 1",
+      "bounding": [
+        820,
+        -3620,
+        430,
+        510
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 3,
+      "title": "Group",
+      "bounding": [
+        2210,
+        -3550,
+        420,
+        605.6
+      ],
+      "color": "#b06634",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "workflowRendererVersion": "LG",
+    "ds": {
+      "scale": 0.5583431719795457,
+      "offset": [
+        -94.93202475643248,
+        4047.431923431712
+      ]
+    },
+    "frontendVersion": "1.36.13",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

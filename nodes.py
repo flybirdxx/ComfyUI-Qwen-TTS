@@ -270,7 +270,7 @@ def check_and_download_tokenizer():
     _MODELS_CHECKED = True
 
 
-def load_qwen_model(model_type: str, model_choice: str, device: str, precision: str, attention: str = "auto", unload_after: bool = False, previous_attention: str = None):
+def load_qwen_model(model_type: str, model_choice: str, device: str, precision: str, attention: str = "auto", unload_after: bool = False, previous_attention: str = None, custom_model_path: Optional[str] = None):
     """Shared model loading logic with caching and local path priority"""
     global _MODEL_CACHE
     
@@ -307,8 +307,8 @@ def load_qwen_model(model_type: str, model_choice: str, device: str, precision: 
     if model_type == "VoiceDesign" and model_choice == "0.6B":
         raise RuntimeError("❌ VoiceDesign only supports 1.7B models!")
         
-    # Cache key includes attention implementation
-    cache_key = (model_type, model_choice, device, precision, attn_impl)
+    # Cache key includes attention implementation and custom model path
+    cache_key = (model_type, model_choice, device, precision, attn_impl, custom_model_path)
     if cache_key in _MODEL_CACHE:
         return _MODEL_CACHE[cache_key]
 
@@ -352,20 +352,28 @@ def load_qwen_model(model_type: str, model_choice: str, device: str, precision: 
     
     final_source = HF_MODEL_MAP.get((model_type, model_choice)) or "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
     found_local = None
+
+    if custom_model_path and isinstance(custom_model_path, str) and custom_model_path.strip():
+        if os.path.exists(custom_model_path) and os.path.isdir(custom_model_path):
+            print(f"🔧 [Qwen3-TTS] Using custom model path: {custom_model_path}")
+            found_local = custom_model_path
+        else:
+            print(f"⚠️ [Qwen3-TTS] Custom model path not found or invalid: {custom_model_path}")
     
-    for base in base_paths:
-        try:
-            if not os.path.isdir(base): continue
-            subdirs = os.listdir(base)
-            for d in subdirs:
-                cand = os.path.join(base, d)
-                if os.path.isdir(cand):
-                    # Match logic: contains model size and type keyword
-                    if model_choice in d and model_type.lower() in d.lower():
-                        found_local = cand
-                        break
-            if found_local: break
-        except Exception: pass
+    if not found_local:
+        for base in base_paths:
+            try:
+                if not os.path.isdir(base): continue
+                subdirs = os.listdir(base)
+                for d in subdirs:
+                    cand = os.path.join(base, d)
+                    if os.path.isdir(cand):
+                        # Match logic: contains model size and type keyword
+                        if model_choice in d and model_type.lower() in d.lower():
+                            found_local = cand
+                            break
+                if found_local: break
+            except Exception: pass
     
     if found_local:
         final_source = found_local
@@ -584,6 +592,7 @@ class VoiceCloneNode:
                 "x_vector_only": ("BOOLEAN", {"default": False}),
                 "attention": (ATTENTION_OPTIONS, {"default": "auto", "tooltip": "Attention implementation"}),
                 "unload_model_after_generate": ("BOOLEAN", {"default": False, "tooltip": "Unload model from memory after generation"}),
+                "custom_model_path": ("STRING", {"default": "", "placeholder": "Absolute path to local fine-tuned model"}),
             }
         }
 
@@ -681,7 +690,7 @@ class VoiceCloneNode:
                  max_new_tokens: int = 2048,
                  top_p: float = 0.8, top_k: int = 20, temperature: float = 1.0, repetition_penalty: float = 1.05,
                  x_vector_only: bool = False, attention: str = "auto",
-                 unload_model_after_generate: bool = False) -> Tuple[Dict[str, Any]]:
+                 unload_model_after_generate: bool = False, custom_model_path: str = "") -> Tuple[Dict[str, Any]]:
         if ref_audio is None and voice_clone_prompt is None:
             raise RuntimeError("Either reference audio or voice clone prompt is required")
 
@@ -696,7 +705,7 @@ class VoiceCloneNode:
 
         pbar.update_absolute(1, 3, None)
 
-        model = load_qwen_model("Base", model_choice, device, precision, attention, unload_model_after_generate, previous_attention)
+        model = load_qwen_model("Base", model_choice, device, precision, attention, unload_model_after_generate, previous_attention, custom_model_path)
 
         torch.manual_seed(seed)
         if torch.cuda.is_available():
@@ -782,6 +791,8 @@ class CustomVoiceNode:
                 "repetition_penalty": ("FLOAT", {"default": 1.05, "min": 1.0, "max": 2.0, "step": 0.05, "tooltip": "Penalty for repetition"}),
                 "attention": (ATTENTION_OPTIONS, {"default": "auto", "tooltip": "Attention implementation"}),
                 "unload_model_after_generate": ("BOOLEAN", {"default": False, "tooltip": "Unload model from memory after generation"}),
+                "custom_model_path": ("STRING", {"default": "", "placeholder": "Absolute path to local fine-tuned model"}),
+                "custom_speaker_name": ("STRING", {"default": "", "placeholder": "Custom speaker name (for fine-tuned models)"}),
             }
         }
 
@@ -791,9 +802,21 @@ class CustomVoiceNode:
     CATEGORY = "Qwen3-TTS"
     DESCRIPTION = "CustomVoice: Generate speech using preset speakers."
 
-    def generate(self, text: str, speaker: str, model_choice: str, device: str, precision: str, language: str, seed: int = 0, instruct: str = "", max_new_tokens: int = 2048, top_p: float = 0.8, top_k: int = 20, temperature: float = 1.0, repetition_penalty: float = 1.05, attention: str = "auto", unload_model_after_generate: bool = False) -> Tuple[Dict[str, Any]]:
-        if not text or not speaker:
-            raise RuntimeError("Text and speaker are required")
+    def generate(self, text: str, speaker: str, model_choice: str, device: str, precision: str, language: str, seed: int = 0, instruct: str = "", max_new_tokens: int = 2048, top_p: float = 0.8, top_k: int = 20, temperature: float = 1.0, repetition_penalty: float = 1.05, attention: str = "auto", unload_model_after_generate: bool = False, custom_model_path: str = "", custom_speaker_name: str = "") -> Tuple[Dict[str, Any]]:
+        # Prefer custom_speaker_name if provided
+        target_speaker = speaker
+        if custom_speaker_name and custom_speaker_name.strip():
+            target_speaker = custom_speaker_name.strip()
+            # If using custom speaker, we don't force lowercase/replace logic unless we assume user knows
+            # But standard logic was: speaker.lower().replace(" ", "_")
+            # For custom model, user likely provides exact name. Let's pass it as is or sanitize slightly?
+            # We will use it as is but safer to still strip.
+            target_speaker = target_speaker
+        else:
+            target_speaker = speaker.lower().replace(" ", "_")
+
+        if not text:
+            raise RuntimeError("Text is required")
 
         pbar = ProgressBar(3)
 
@@ -806,7 +829,7 @@ class CustomVoiceNode:
 
         pbar.update_absolute(1, 3, None)
 
-        model = load_qwen_model("CustomVoice", model_choice, device, precision, attention, unload_model_after_generate, previous_attention)
+        model = load_qwen_model("CustomVoice", model_choice, device, precision, attention, unload_model_after_generate, previous_attention, custom_model_path)
 
         torch.manual_seed(seed)
         if torch.cuda.is_available():
@@ -820,7 +843,7 @@ class CustomVoiceNode:
         wavs, sr = model.generate_custom_voice(
             text=text,
             language=mapped_lang,
-            speaker=speaker.lower().replace(" ", "_"),
+            speaker=target_speaker,
             instruct=instruct if instruct and instruct.strip() else None,
             max_new_tokens=max_new_tokens,
             top_p=top_p,

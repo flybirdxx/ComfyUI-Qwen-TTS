@@ -12,3 +12,5 @@ sox
 huggingface_hub
 onnxruntime
 onnxruntime-gpu
+safetensors
+scipy>=1.11.0

@@ -1,7 +1,7 @@
 [project]
 name = "qwen3-tts-comfyui"  # Unique identifier (immutable after creation)
 description = "ComfyUI custom nodes for speech synthesis, voice cloning, and voice design based on Qwen3-TTS"
-version = "1.0.5"  # Semantic versioning
+version = "1.0.6"  # Semantic versioning
 requires-python = ">=3.9"
 license = { text = "Apache-2.0" }
 dependencies = [

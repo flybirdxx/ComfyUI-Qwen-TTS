@@ -8,6 +8,8 @@ ComfyUI custom nodes for speech synthesis, voice cloning, and voice design, base
 
 ## 📋 Changelog
 
+- **2026-01-29**: Feature Update: Support for loading custom fine-tuned models & speakers ([update.md](doc/update.md))
+  - *Note: Fine-tuning is currently experimental; zero-shot cloning is recommended for best results.*
 - **2026-01-27**: UI Optimization: Sleek LoadSpeaker UI; fixed PyTorch 2.6+ compatibility ([update.md](doc/update.md))
 - **2026-01-26**: Functional Update: New voice persistence system (SaveVoice / LoadSpeaker) ([update.md](doc/update.md))
 - **2026-01-24**: Added attention mechanism selection & model memory management features ([update.md](doc/update.md))
