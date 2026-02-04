@@ -8,6 +8,7 @@ ComfyUI custom nodes for speech synthesis, voice cloning, and voice design, base
 
 ## 📋 Changelog
 
+- **2026-02-04**: Feature Update: Added Global Pause Control (`QwenTTSConfigNode`) and `extra_model_paths.yaml` support ([update.md](doc/update.md))
 - **2026-01-29**: Feature Update: Support for loading custom fine-tuned models & speakers ([update.md](doc/update.md))
   - *Note: Fine-tuning is currently experimental; zero-shot cloning is recommended for best results.*
 - **2026-01-27**: UI Optimization: Sleek LoadSpeaker UI; fixed PyTorch 2.6+ compatibility ([update.md](doc/update.md))
@@ -98,6 +99,16 @@ Load saved voice features and metadata with zero configuration.
 Persist extracted voice features and metadata to disk for future use.
 - **Capabilities**: Build a permanent voice library for reuse via `LoadSpeakerNode`.
 
+### 9. Qwen3-TTS Config (`QwenTTSConfigNode`) [New]
+Define global pause durations for punctuation to control speech rhythm.
+- **Inputs**:
+  - `pause_linebreak`: Silence after linebreaks.
+  - `period_pause`: Silence after periods (.).
+  - `comma_pause`: Silence after commas (,).
+  - `question_pause`: Silence after question marks (?).
+  - `hyphen_pause`: Silence after hyphens (-).
+- **Usage**: Connect output to the `config` input of other TTS nodes.
+
 ## Attention Mechanisms
 
 All nodes support multiple attention implementations with automatic detection and graceful fallback:
@@ -161,6 +172,26 @@ Ensure you have the required dependencies:
 
 ```bash
 pip install torch torchaudio transformers librosa accelerate
+```
+
+### Model Directory Structure
+
+ComfyUI-Qwen-TTS automatically searches for models in the following priority:
+
+```text
+ComfyUI/
+├── models/
+│   └── qwen-tts/
+│       ├── Qwen/Qwen3-TTS-12Hz-1.7B-Base/
+│       ├── Qwen/Qwen3-TTS-12Hz-0.6B-Base/
+│       ├── Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign/
+│       ├── Qwen/Qwen3-TTS-Tokenizer-12Hz/
+│       └── voices/ (Saved presets .wav/.qvp)
+```
+
+**Note**: You can also use `extra_model_paths.yaml` to define a custom model path:
+```yaml
+qwen-tts: D:\MyModels\Qwen
 ```
 
 ## Tips for Best Results

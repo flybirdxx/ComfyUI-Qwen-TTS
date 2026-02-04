@@ -1,5 +1,12 @@
 # Update Log
 
+## 2026-02-04
+- **Global Pause Control**: Introduced `QwenTTSConfigNode` to finely control silence duration after punctuation.
+  - Supports separate settings for Linebreaks, Periods (.), Commas (,), Question marks (?), and Hyphens (-).
+  - Supported nodes: `VoiceCloneNode`, `CustomVoiceNode`, `VoiceDesignNode`, `DialogueInferenceNode`.
+- **Path Configuration**: Added support for ComfyUI's `extra_model_paths.yaml`.
+  - You can now define a custom model directory using the `qwen-tts` key.
+
 ## 2026-01-29
 - **Fine-tuning Support**: Added support for loading custom fine-tuned models in `VoiceCloneNode` and `CustomVoiceNode`.
   - Added `custom_model_path` input: specific absolute path to model folder.

@@ -8,6 +8,7 @@
 
 ## 📋 更新日志
 
+- **2026-02-04**: 功能更新：添加全局停顿控制 (`QwenTTSConfigNode`) 与 `extra_model_paths.yaml` 支持 ([update.md](doc/update.md))
 - **2026-01-29**: 功能更新：支持加载自定义微调模型和 Speaker ([update.md](doc/update.md))
   - *注意：微调功能目前为实验性；推荐直接使用声音克隆以获得最佳效果。*
 - **2026-01-27**：功能优化：精简 LoadSpeaker UI，修复 PyTorch 兼容性 ([update.md](doc/update.md))
@@ -99,6 +100,16 @@
 将克隆的声音特征及其参考文本永久保存到磁盘。
 - **能力**: 建立个性化声音库。保存后可通过 `LoadSpeakerNode` 极速调用。
 
+### 9. Qwen3-TTS 全局配置 (`QwenTTSConfigNode`) [New]
+为 TTS 节点定义标点符号的停顿持续时间，精确控制语音节奏。
+- **输入**:
+  - `pause_linebreak`: 换行符处的停顿时间。
+  - `period_pause`: 句号 (.) 后的停顿时间。
+  - `comma_pause`: 逗号 (,) 后的停顿时间。
+  - `question_pause`: 问号 (?) 后的停顿时间。
+  - `hyphen_pause`: 连字符 (-) 后的停顿时间。
+- **用法**: 连接到其他 TTS 节点的 `config` 输入端。
+
 ## 注意力机制
 
 所有节点支持多种注意力实现，具有自动检测和优雅降级功能：
@@ -160,6 +171,26 @@
 确保已安装以下依赖：
 ```bash
 pip install torch torchaudio transformers librosa accelerate
+```
+
+### 模型目录结构示意
+
+目前插件按以下顺序自动搜索模型：
+
+```text
+ComfyUI/
+├── models/
+│   └── qwen-tts/
+│       ├── Qwen/Qwen3-TTS-12Hz-1.7B-Base/
+│       ├── Qwen/Qwen3-TTS-12Hz-0.6B-Base/
+│       ├── Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign/
+│       ├── Qwen/Qwen3-TTS-Tokenizer-12Hz/
+│       └── voices/ (保存的预设 .wav/.qvp)
+```
+
+**提示**: 你也可以通过 `extra_model_paths.yaml` 自定义模型路径：
+```yaml
+qwen-tts: D:\MyAI\Models\Qwen
 ```
 
 ## 最佳实践技巧
