@@ -4,11 +4,12 @@ English | [中文版](README_CN.md)
 
 > **⚠️ CRITICAL: transformers Version Requirement**
 >
-> Qwen3-TTS is **incompatible** with `transformers >= 5.0`. Versions 5.0+ introduce breaking API changes that will cause model loading failures and runtime errors. Please pin your version:
+> Qwen3-TTS works on **transformers 4.57.3 and transformers >= 5** (v5.0+ compatibility is provided by `tools/transformers5_shim.py`, applied automatically on import). On transformers < 5 the shims are no-ops, so the 4.57.3 path is unchanged:
 > ```bash
-> pip install transformers==4.57.3
+> pip install transformers==4.57.3   # v4 path (shims inactive)
+> # or
+> pip install "transformers>=5.0"    # v5 path (shims applied)
 > ```
-> If you have already installed a newer version, **downgrade immediately** before using this plugin.
 
 ![Nodes Screenshot](example/example.png)
 

@@ -31,10 +31,63 @@ from transformers.masking_utils import (
     create_causal_mask,
     create_sliding_window_causal_mask,
 )
+
+# --- transformers >=5 compat (patched locally) -------------------------------
+# transformers 5 renamed create_causal_mask argument `input_embeds` to
+# `inputs_embeds` and dropped `cache_position`; the vendored calls use the v4
+# names. Rebind thin adapters. No-op on transformers <5.
+if not getattr(create_causal_mask, "_v5_shim", False):
+    _create_causal_mask_v4 = create_causal_mask
+    _create_sliding_v4 = create_sliding_window_causal_mask
+
+    def _adapt_mask_kwargs(kwargs):
+        if "input_embeds" in kwargs:
+            kwargs["inputs_embeds"] = kwargs.pop("input_embeds")
+        if "cache_position" in kwargs and "position_ids" not in kwargs:
+            kwargs["position_ids"] = kwargs.pop("cache_position").unsqueeze(0)
+        else:
+            kwargs.pop("cache_position", None)
+        return kwargs
+
+    def create_causal_mask(**kwargs):  # noqa: F811
+        return _create_causal_mask_v4(**_adapt_mask_kwargs(kwargs))
+    create_causal_mask._v5_shim = True
+
+    def create_sliding_window_causal_mask(**kwargs):  # noqa: F811
+        return _create_sliding_v4(**_adapt_mask_kwargs(kwargs))
+    create_sliding_window_causal_mask._v5_shim = True
+# --- end shim ---------------------------------------------------------------
 from transformers.modeling_flash_attention_utils import FlashAttentionKwargs
 from transformers.modeling_layers import GradientCheckpointingLayer
 from transformers.modeling_outputs import BaseModelOutputWithPast
 from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS, dynamic_rope_update
+
+# --- transformers >=5 compat (patched locally) -------------------------------
+# transformers 5 removed the "default" entry from ROPE_INIT_FUNCTIONS; the
+# lookups below raise KeyError: 'default' for configs without rope_scaling.
+# Restore the v4 default under a rebound local name. No-op on transformers <5.
+if "default" not in ROPE_INIT_FUNCTIONS:
+    def _compute_default_rope_parameters(config, device=None, seq_len=None, **kwargs):  # noqa: E501
+        import torch as _torch
+        base = config.rope_theta
+        partial_rotary_factor = getattr(config, "partial_rotary_factor", 1.0)
+        head_dim = getattr(config, "head_dim", None)
+        if head_dim is None:
+            head_dim = config.hidden_size // config.num_attention_heads
+        attention_factor = 1.0
+        inv_freq = 1.0 / (
+            _torch.tensor(base, dtype=_torch.int64)
+            ** (
+                _torch.arange(0, int(head_dim * partial_rotary_factor), 2, dtype=_torch.int64)
+                .float()
+                .to(device)
+                / head_dim
+            )
+        )
+        return inv_freq, attention_factor
+
+    ROPE_INIT_FUNCTIONS = {**ROPE_INIT_FUNCTIONS, "default": _compute_default_rope_parameters}
+# --- end shim ---------------------------------------------------------------
 from transformers.modeling_utils import ALL_ATTENTION_FUNCTIONS, PreTrainedModel
 from transformers.processing_utils import Unpack
 from transformers.utils import ModelOutput, logging
@@ -57,7 +110,7 @@ def auto_docstring(obj=None, *, custom_intro=None, custom_args=None, checkpoint=
         return decorator
 
 from transformers.utils.deprecation import deprecate_kwarg
-from transformers.utils.generic import check_model_inputs
+# from transformers.utils.generic import check_model_inputs  # dead on transformers >=5 (needs a func arg); unused
 
 from .configuration_qwen3_tts_tokenizer_v2 import (
     Qwen3TTSTokenizerV2Config,
@@ -543,6 +596,17 @@ class Qwen3TTSTokenizerV2DecoderTransformerModel(Qwen3TTSTokenizerV2DecoderPreTr
             cache_position = torch.arange(
                 past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
             )
+
+        # transformers >=5 compat (patched locally): generate grows position_ids
+        # across decode steps, so a cached step receives the FULL history while
+        # inputs_embeds carries only the current token. Slice to the current
+        # step or the rotary broadcast inflates the attention output.
+        if (
+            position_ids is not None
+            and inputs_embeds is not None
+            and position_ids.shape[-1] != inputs_embeds.shape[1]
+        ):
+            position_ids = position_ids[..., -inputs_embeds.shape[1] :]
 
         if position_ids is None:
             position_ids = cache_position.unsqueeze(0)
