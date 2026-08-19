@@ -711,6 +711,7 @@ class VoiceCloneNode:
                 "temperature": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature"}),
                 "repetition_penalty": ("FLOAT", {"default": 1.05, "min": 1.0, "max": 2.0, "step": 0.05, "tooltip": "Penalty for repetition"}),
                 "x_vector_only": ("BOOLEAN", {"default": False}),
+                "instruct": ("STRING", {"multiline": True, "default": "", "placeholder": "Optional style/emotion, e.g. 用愤怒的语气说"}),
                 "attention": (ATTENTION_OPTIONS, {"default": "auto", "tooltip": "Attention implementation"}),
                 "unload_model_after_generate": ("BOOLEAN", {"default": False, "tooltip": "Unload model from memory after generation"}),
                 "custom_model_path": ("STRING", {"default": "", "placeholder": "Absolute path to local fine-tuned model"}),
@@ -811,6 +812,7 @@ class VoiceCloneNode:
                  max_new_tokens: int = 2048,
                  top_p: float = 0.8, top_k: int = 20, temperature: float = 1.0, repetition_penalty: float = 1.05,
                  x_vector_only: bool = False, attention: str = "auto",
+                 instruct: str = "",
                  unload_model_after_generate: bool = False, custom_model_path: str = "") -> Tuple[Dict[str, Any]]:
         if ref_audio is None and voice_clone_prompt is None:
             raise RuntimeError("Either reference audio or voice clone prompt is required")
@@ -861,6 +863,7 @@ class VoiceCloneNode:
                 ref_text=ref_text if ref_text and ref_text.strip() else None,
                 voice_clone_prompt=voice_clone_prompt_param,
                 x_vector_only_mode=x_vector_only,
+                instruct=instruct if instruct and instruct.strip() else None,
                 max_new_tokens=max_new_tokens,
                 top_p=top_p,
                 top_k=top_k,
