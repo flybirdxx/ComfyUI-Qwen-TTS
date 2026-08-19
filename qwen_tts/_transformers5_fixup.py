@@ -25,14 +25,26 @@ def install() -> None:
         model = orig(cls, pretrained_model_name_or_path, *args, **kwargs)
         try:
             fn = modeling_module.ROPE_INIT_FUNCTIONS["default"]
-            rot = model.model.talker.model.rotary_emb
             device = next(model.model.talker.model.parameters()).device
+            # Talker rotary (Qwen3TTSTalkerRotaryEmbedding).
+            rot = model.model.talker.model.rotary_emb
             inv_freq, attention_scaling = fn(rot.config, device)
             rot.inv_freq = inv_freq
             rot.original_inv_freq = inv_freq.clone()
             rot.attention_scaling = attention_scaling
         except Exception:
-            # A fixup failure must never break model loading.
+            pass
+        try:
+            # Code-predictor (subtalker) rotary (Qwen3TTSRotaryEmbedding) is a
+            # separate instance with the SAME meta-device problem; unfixed it
+            # made the subtalker logits wrong under transformers 5.
+            fn = modeling_module.ROPE_INIT_FUNCTIONS["default"]
+            rot2 = model.model.talker.code_predictor.model.rotary_emb
+            inv_freq2, scaling2 = fn(rot2.config, device)
+            rot2.inv_freq = inv_freq2
+            rot2.original_inv_freq = inv_freq2.clone()
+            rot2.attention_scaling = scaling2
+        except Exception:
             pass
         return model
 
