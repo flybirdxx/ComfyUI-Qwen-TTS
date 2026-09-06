@@ -612,9 +612,9 @@ class VoiceDesignNode:
             "optional": {
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}),
                 "max_new_tokens": ("INT", {"default": 2048, "min": 512, "max": 4096, "step": 256}),
-                "top_p": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling probability"}),
-                "top_k": ("INT", {"default": 20, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling parameter"}),
-                "temperature": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature"}),
+                "top_p": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling probability"}),
+                "top_k": ("INT", {"default": 50, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling parameter"}),
+                "temperature": ("FLOAT", {"default": 0.9, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature"}),
                 "repetition_penalty": ("FLOAT", {"default": 1.05, "min": 1.0, "max": 2.0, "step": 0.05, "tooltip": "Penalty for repetition"}),
                 "attention": (ATTENTION_OPTIONS, {"default": "auto", "tooltip": "Attention implementation"}),
                 "unload_model_after_generate": ("BOOLEAN", {"default": False, "tooltip": "Unload model from memory after generation"}),
@@ -627,7 +627,7 @@ class VoiceDesignNode:
     CATEGORY = "Qwen3-TTS"
     DESCRIPTION = "VoiceDesign: Generate custom voices from descriptions."
 
-    def generate(self, text: str, instruct: str, model_choice: str, device: str, precision: str, language: str, seed: int = 0, max_new_tokens: int = 2048, top_p: float = 0.8, top_k: int = 20, temperature: float = 1.0, repetition_penalty: float = 1.05, attention: str = "auto", unload_model_after_generate: bool = False) -> Tuple[Dict[str, Any]]:
+    def generate(self, text: str, instruct: str, model_choice: str, device: str, precision: str, language: str, seed: int = 0, max_new_tokens: int = 2048, top_p: float = 1.0, top_k: int = 50, temperature: float = 0.9, repetition_penalty: float = 1.05, attention: str = "auto", unload_model_after_generate: bool = False) -> Tuple[Dict[str, Any]]:
         if not text or not instruct:
             raise RuntimeError("Text and instruction description are required")
 
@@ -706,11 +706,12 @@ class VoiceCloneNode:
                 "voice_clone_prompt": ("VOICE_CLONE_PROMPT", {"tooltip": "Reusable voice clone prompt from VoiceClonePromptNode"}),
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}),
                 "max_new_tokens": ("INT", {"default": 2048, "min": 512, "max": 4096, "step": 256}),
-                "top_p": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling probability"}),
-                "top_k": ("INT", {"default": 20, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling parameter"}),
-                "temperature": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature"}),
+                "top_p": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling probability"}),
+                "top_k": ("INT", {"default": 50, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling parameter"}),
+                "temperature": ("FLOAT", {"default": 0.9, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature"}),
                 "repetition_penalty": ("FLOAT", {"default": 1.05, "min": 1.0, "max": 2.0, "step": 0.05, "tooltip": "Penalty for repetition"}),
                 "x_vector_only": ("BOOLEAN", {"default": False}),
+                "instruct": ("STRING", {"multiline": True, "default": "", "placeholder": "Optional style/emotion, e.g. 用愤怒的语气说"}),
                 "attention": (ATTENTION_OPTIONS, {"default": "auto", "tooltip": "Attention implementation"}),
                 "unload_model_after_generate": ("BOOLEAN", {"default": False, "tooltip": "Unload model from memory after generation"}),
                 "custom_model_path": ("STRING", {"default": "", "placeholder": "Absolute path to local fine-tuned model"}),
@@ -809,8 +810,9 @@ class VoiceCloneNode:
                  ref_audio: Optional[Dict[str, Any]] = None, ref_text: str = "", 
                  voice_clone_prompt: Optional[Any] = None, seed: int = 0, 
                  max_new_tokens: int = 2048,
-                 top_p: float = 0.8, top_k: int = 20, temperature: float = 1.0, repetition_penalty: float = 1.05,
+                 top_p: float = 1.0, top_k: int = 50, temperature: float = 0.9, repetition_penalty: float = 1.05,
                  x_vector_only: bool = False, attention: str = "auto",
+                 instruct: str = "",
                  unload_model_after_generate: bool = False, custom_model_path: str = "") -> Tuple[Dict[str, Any]]:
         if ref_audio is None and voice_clone_prompt is None:
             raise RuntimeError("Either reference audio or voice clone prompt is required")
@@ -861,6 +863,7 @@ class VoiceCloneNode:
                 ref_text=ref_text if ref_text and ref_text.strip() else None,
                 voice_clone_prompt=voice_clone_prompt_param,
                 x_vector_only_mode=x_vector_only,
+                instruct=instruct if instruct and instruct.strip() else None,
                 max_new_tokens=max_new_tokens,
                 top_p=top_p,
                 top_k=top_k,
@@ -910,9 +913,9 @@ class CustomVoiceNode:
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}),
                 "instruct": ("STRING", {"multiline": True, "default": "", "placeholder": "Style instruction (optional)"}),
                 "max_new_tokens": ("INT", {"default": 2048, "min": 512, "max": 4096, "step": 256}),
-                "top_p": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling probability"}),
-                "top_k": ("INT", {"default": 20, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling parameter"}),
-                "temperature": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature"}),
+                "top_p": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling probability"}),
+                "top_k": ("INT", {"default": 50, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling parameter"}),
+                "temperature": ("FLOAT", {"default": 0.9, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature"}),
                 "repetition_penalty": ("FLOAT", {"default": 1.05, "min": 1.0, "max": 2.0, "step": 0.05, "tooltip": "Penalty for repetition"}),
                 "attention": (ATTENTION_OPTIONS, {"default": "auto", "tooltip": "Attention implementation"}),
                 "unload_model_after_generate": ("BOOLEAN", {"default": False, "tooltip": "Unload model from memory after generation"}),
@@ -927,7 +930,7 @@ class CustomVoiceNode:
     CATEGORY = "Qwen3-TTS"
     DESCRIPTION = "CustomVoice: Generate speech using preset speakers."
 
-    def generate(self, text: str, speaker: str, model_choice: str, device: str, precision: str, language: str, seed: int = 0, instruct: str = "", max_new_tokens: int = 2048, top_p: float = 0.8, top_k: int = 20, temperature: float = 1.0, repetition_penalty: float = 1.05, attention: str = "auto", unload_model_after_generate: bool = False, custom_model_path: str = "", custom_speaker_name: str = "") -> Tuple[Dict[str, Any]]:
+    def generate(self, text: str, speaker: str, model_choice: str, device: str, precision: str, language: str, seed: int = 0, instruct: str = "", max_new_tokens: int = 2048, top_p: float = 1.0, top_k: int = 50, temperature: float = 0.9, repetition_penalty: float = 1.05, attention: str = "auto", unload_model_after_generate: bool = False, custom_model_path: str = "", custom_speaker_name: str = "") -> Tuple[Dict[str, Any]]:
         # Prefer custom_speaker_name if provided
         target_speaker = speaker
         if custom_speaker_name and custom_speaker_name.strip():
@@ -1121,9 +1124,9 @@ class DialogueInferenceNode:
             "optional": {
                 "seed": ("INT", {"default": 0, "min": 0, "max": 0xffffffffffffffff, "control_after_generate": True}),
                 "max_new_tokens_per_line": ("INT", {"default": 2048, "min": 512, "max": 4096, "step": 256}),
-                "top_p": ("FLOAT", {"default": 0.8, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling probability"}),
-                "top_k": ("INT", {"default": 20, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling parameter"}),
-                "temperature": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature"}),
+                "top_p": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.05, "tooltip": "Nucleus sampling probability"}),
+                "top_k": ("INT", {"default": 50, "min": 0, "max": 100, "step": 1, "tooltip": "Top-k sampling parameter"}),
+                "temperature": ("FLOAT", {"default": 0.9, "min": 0.1, "max": 2.0, "step": 0.1, "tooltip": "Sampling temperature"}),
                 "repetition_penalty": ("FLOAT", {"default": 1.05, "min": 1.0, "max": 2.0, "step": 0.05, "tooltip": "Penalty for repetition"}),
                 "attention": (ATTENTION_OPTIONS, {"default": "auto", "tooltip": "Attention implementation"}),
                 "unload_model_after_generate": ("BOOLEAN", {"default": False, "tooltip": "Unload model from memory after generation"}),
@@ -1136,7 +1139,7 @@ class DialogueInferenceNode:
     CATEGORY = "Qwen3-TTS"
     DESCRIPTION = "DialogueInference: Execute a script with multiple roles and generate continuous speech."
     # ### UPDATED ARGUMENTS: Added question_pause, hyphen_pause
-    def generate_dialogue(self, script: str, role_bank: Dict[str, Any], model_choice: str, device: str, precision: str, language: str, pause_linebreak: float, period_pause: float, comma_pause: float, question_pause: float, hyphen_pause: float, merge_outputs: bool, batch_size: int, seed: int = 0, max_new_tokens_per_line: int = 2048, top_p: float = 0.8, top_k: int = 20, temperature: float = 1.0, repetition_penalty: float = 1.05, attention: str = "auto", unload_model_after_generate: bool = False) -> Tuple[Dict[str, Any]]:
+    def generate_dialogue(self, script: str, role_bank: Dict[str, Any], model_choice: str, device: str, precision: str, language: str, pause_linebreak: float, period_pause: float, comma_pause: float, question_pause: float, hyphen_pause: float, merge_outputs: bool, batch_size: int, seed: int = 0, max_new_tokens_per_line: int = 2048, top_p: float = 1.0, top_k: int = 50, temperature: float = 0.9, repetition_penalty: float = 1.05, attention: str = "auto", unload_model_after_generate: bool = False) -> Tuple[Dict[str, Any]]:
         if not script or not role_bank:
             raise RuntimeError("Script and Role Bank are required")
 

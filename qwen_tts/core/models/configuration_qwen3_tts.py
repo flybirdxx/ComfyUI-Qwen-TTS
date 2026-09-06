@@ -391,6 +391,7 @@ class Qwen3TTSTalkerConfig(PretrainedConfig):
         num_code_groups=32,
         text_hidden_size=2048,
         codec_eos_token_id=4198,
+        pad_token_id=None,  # transformers >=5 compat; defaults to codec_eos
         codec_think_id=4202,
         codec_nothink_id=4203,
         codec_think_bos_id=4204,
@@ -440,6 +441,7 @@ class Qwen3TTSTalkerConfig(PretrainedConfig):
         self.num_code_groups = num_code_groups
         self.text_hidden_size = text_hidden_size
         self.codec_eos_token_id = codec_eos_token_id
+        self.pad_token_id = pad_token_id if pad_token_id is not None else codec_eos_token_id
         self.codec_think_id = codec_think_id
         self.codec_language_id = codec_language_id
         self.codec_nothink_id = codec_nothink_id

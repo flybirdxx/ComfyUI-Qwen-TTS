@@ -21,4 +21,8 @@ qwen_tts: Qwen-TTS package.
 from .inference.qwen3_tts_model import Qwen3TTSModel, VoiceClonePromptItem
 from .inference.qwen3_tts_tokenizer import Qwen3TTSTokenizer
 
+# Apply transformers-5 runtime fixups (RoPE meta-device recovery). No-op on v4.
+from . import _transformers5_fixup as _fixup
+_fixup.install()
+
 __all__ = ["__version__"]
