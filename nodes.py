@@ -13,6 +13,8 @@ import types
 from comfy import model_management
 from comfy.utils import ProgressBar
 
+from .pause_utils import extract_leading_pause
+
 # Register "qwen-tts" model folder for extra_model_paths.yaml support
 try:
     folder_paths.add_model_folder_path("qwen-tts", os.path.join(folder_paths.models_dir, "qwen-tts"))
@@ -1168,6 +1170,7 @@ class DialogueInferenceNode:
         texts_to_gen = []
         prompts_to_gen = []
         langs_to_gen = []
+        leading_pauses_to_gen = []
         pauses_to_gen = []
 
         mapped_lang = LANGUAGE_MAP.get(language, "auto")
@@ -1195,6 +1198,8 @@ class DialogueInferenceNode:
 
             if role_name not in role_bank:
                 continue
+
+            text, leading_pause = extract_leading_pause(text)
             # role_bank[role_name] can be a prompt list OR the new packaged dict (if loaded via RoleBank from LoadSpeaker)
             role_data = role_bank[role_name]
             
@@ -1212,6 +1217,8 @@ class DialogueInferenceNode:
             
             segments = split_text_by_pauses(text, config)
 
+            first_generated_segment = True
+
             for segment_text, current_segment_pause in segments:
                 pronounceable = re.sub(r'[^\w\u4e00-\u9fa5]', '', segment_text)
                 if not pronounceable.strip():
@@ -1226,7 +1233,9 @@ class DialogueInferenceNode:
                 texts_to_gen.append(clean_seg_text)
                 prompts_to_gen.append(current_prompt)
                 langs_to_gen.append(mapped_lang)
+                leading_pauses_to_gen.append(leading_pause if first_generated_segment else 0.0)
                 pauses_to_gen.append(current_segment_pause)
+                first_generated_segment = False
 
             if pauses_to_gen:
                 pauses_to_gen[-1] += pause_linebreak
@@ -1249,6 +1258,7 @@ class DialogueInferenceNode:
                 chunk_texts = texts_to_gen[i:i + batch_size]
                 chunk_prompts = prompts_to_gen[i:i + batch_size]
                 chunk_langs = langs_to_gen[i:i + batch_size]
+                chunk_leading_pauses = leading_pauses_to_gen[i:i + batch_size]
                 chunk_pauses = pauses_to_gen[i:i + batch_size]
 
                 current_chunk = i // batch_size + 1
@@ -1274,12 +1284,17 @@ class DialogueInferenceNode:
                         if waveform.shape[1] > 1:
                             waveform = torch.mean(waveform, dim=1, keepdim=True)
 
+                    leading_pause = chunk_leading_pauses[j]
+                    if leading_pause > 0:
+                        silence_len = int(leading_pause * sr)
+                        results.append(waveform.new_zeros((1, 1, silence_len)))
+
                     results.append(waveform)
 
                     this_pause = chunk_pauses[j]
                     if this_pause > 0:
                         silence_len = int(this_pause * sr)
-                        silence = torch.zeros((1, 1, silence_len))
+                        silence = waveform.new_zeros((1, 1, silence_len))
                         results.append(silence)
 
                 if hasattr(torch, 'xpu') and torch.xpu.is_available():
