@@ -193,11 +193,20 @@ The `unload_model_after_generate` toggle is available on all nodes:
 
 ## Installation
 
-Ensure you have the required dependencies:
+Install the full `requirements.txt` into **the Python environment running ComfyUI**. A system terminal reporting `Requirement already satisfied` for `librosa` may refer to a different Python installation.
 
-```bash
-pip install torch torchaudio transformers librosa accelerate
-```
+- **ComfyUI Desktop:** open its built-in terminal, navigate to this custom node's directory, and run `python -m pip install -r requirements.txt`. Check `python -c "import sys; print(sys.executable)"` against the **ComfyUI Python** path in the error. If pip is unavailable, use `uv pip install --python "<ComfyUI Python path>" -r "<absolute path to this node's requirements.txt>"`.
+- **Windows portable:** from the portable root, run:
+  ```bat
+  python_embeded\python.exe -m pip install -r "ComfyUI\custom_nodes\ComfyUI-Qwen-TTS\requirements.txt"
+  ```
+- **Manual / virtual environment:** activate the environment used to launch ComfyUI, then run `python -m pip install -r requirements.txt` from this node's directory.
+
+Restart ComfyUI after installation. See the [official dependency installation guide](https://docs.comfy.org/basic-concepts/custom-nodes#comfy-desktop).
+
+If `qwen_tts` fails to import, the console and node error include the original import error, running Python path, and an installation command targeting that interpreter. Windows commands shown in the error use Command Prompt syntax; in PowerShell prefix a quoted executable path with `&`. If dependencies are already present in that exact runtime, inspect the traceback for a version incompatibility. The bundled `qwen_tts` directory must also be present.
+
+`WinError 10054` alone does not establish a dependency failure or a bug in Python's `asyncio`. If it persists after fixing imports and restarting, investigate its traceback separately.
 
 ### Model Directory Structure
 

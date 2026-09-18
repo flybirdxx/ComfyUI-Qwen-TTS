@@ -72,6 +72,59 @@ class CudaCompatibilityTests(unittest.TestCase):
         return self.nodes.load_qwen_model("Base", "0.6B", device, precision,
                                           attention, custom_model_path=self.temp.name)
 
+    def test_import_failure_retains_cause_and_stops_before_runtime_work(self):
+        import builtins
+
+        real_import = builtins.__import__
+        for error in (ModuleNotFoundError("No module named 'librosa'", name="librosa"),
+                      ImportError("cannot import name 'Example' from 'dependency'")):
+            with self.subTest(error=str(error)):
+                attempts = []
+
+                def failing_import(name, *args, **kwargs):
+                    if name == "qwen_tts":
+                        attempts.append(name)
+                        raise error
+                    return real_import(name, *args, **kwargs)
+
+                spec = importlib.util.spec_from_file_location("qwen_test_nodes.nodes", ROOT / "nodes.py")
+                nodes = importlib.util.module_from_spec(spec)
+                output = io.StringIO()
+                with patch("builtins.__import__", side_effect=failing_import), \
+                        contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
+                    spec.loader.exec_module(nodes)
+                self.assertEqual(attempts, ["qwen_tts"])
+                self.assertIsNone(nodes.Qwen3TTSModel)
+                self.assertIsNone(nodes.VoiceClonePromptItem)
+                self.assertIn(str(error), output.getvalue())
+                self.assertIn(sys.executable, output.getvalue())
+                self.assertIn(str(ROOT / "requirements.txt"), output.getvalue())
+                with patch.object(nodes, "check_and_download_tokenizer") as download, \
+                        patch.object(nodes, "get_attention_implementation") as attention:
+                    with self.assertRaises(RuntimeError) as raised:
+                        nodes.load_qwen_model("Base", "0.6B", "auto", "bf16")
+                    self.assertIs(raised.exception.__cause__, error)
+                    self.assertIn(str(error), str(raised.exception))
+                    self.assertIn("Restart ComfyUI", str(raised.exception))
+                    download.assert_not_called()
+                    attention.assert_not_called()
+                self.assertEqual(nodes._MODEL_CACHE, {})
+
+    def test_windows_install_hint_quotes_runtime_and_requirements_paths(self):
+        with patch.object(self.nodes.os, "name", "nt"), \
+                patch.object(sys, "executable", r"C:\Comfy Desktop\env\python.exe"), \
+                patch.object(self.nodes, "current_dir", "C:/Custom Nodes/Qwen TTS"):
+            message = self.nodes._qwen_import_diagnostic(ImportError("missing dependency"))
+        self.assertIn('"C:\\Comfy Desktop\\env\\python.exe" -m pip install -r "C:/Custom Nodes/Qwen TTS/requirements.txt"', message)
+        self.assertIn("cmd.exe", message)
+        self.assertIn("uv pip install --python", message)
+
+    def test_missing_bundled_package_has_restore_guidance(self):
+        with patch.object(self.nodes.os.path, "isdir", return_value=False):
+            message = self.nodes._qwen_import_diagnostic(ImportError("missing qwen_tts"))
+        self.assertIn("Restore the complete custom node repository", message)
+        self.assertNotIn("pip install", message)
+
     def test_pascal_uses_fp32_eager_for_all_attention_choices(self):
         for attention in self.nodes.ATTENTION_OPTIONS:
             with self.subTest(attention=attention):

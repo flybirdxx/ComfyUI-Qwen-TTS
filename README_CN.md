@@ -189,10 +189,20 @@ CUDA 下载或加载权重前会先执行一个小型运算。若出现
 
 ## 安装
 
-确保已安装以下依赖：
-```bash
-pip install torch torchaudio transformers librosa accelerate
-```
+请将完整的 `requirements.txt` 安装到 **运行 ComfyUI 的 Python 环境**。系统终端中显示 `librosa` 已满足依赖（`Requirement already satisfied`），可能仅表示它已安装到另一个 Python 环境。
+
+- **ComfyUI Desktop：**打开其内置终端，进入本插件目录，运行 `python -m pip install -r requirements.txt`。使用 `python -c "import sys; print(sys.executable)"` 检查路径是否与错误中的 **ComfyUI Python** 一致。如果该环境没有 pip，可运行 `uv pip install --python "<ComfyUI Python 路径>" -r "<本插件 requirements.txt 的绝对路径>"`。
+- **Windows 便携版：**在便携版根目录运行：
+  ```bat
+  python_embeded\python.exe -m pip install -r "ComfyUI\custom_nodes\ComfyUI-Qwen-TTS\requirements.txt"
+  ```
+- **手动安装 / 虚拟环境：**激活启动 ComfyUI 所用的环境，然后在本插件目录运行 `python -m pip install -r requirements.txt`。
+
+安装完成后重启 ComfyUI。参考[官方依赖安装指南](https://docs.comfy.org/basic-concepts/custom-nodes#comfy-desktop)。
+
+当 `qwen_tts` 导入失败时，控制台及节点错误会保留原始导入错误，并显示实际 Python 路径和针对该解释器的安装命令。Windows 错误提示中的命令适用于命令提示符（cmd.exe）；PowerShell 中带引号的解释器路径前需要加 `&`。若依赖已安装到该环境，请根据原始 traceback 排查版本不兼容问题。同时确认插件自带的 `qwen_tts` 目录完整。
+
+仅凭 `WinError 10054` 无法确认是依赖缺失或 Python 的 `asyncio` 有缺陷。若修复导入并重启后仍出现此错误，应单独分析其 traceback。
 
 ### 模型目录结构示意
 

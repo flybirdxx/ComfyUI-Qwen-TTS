@@ -113,28 +113,48 @@ if current_dir not in sys.path:
 if qwen_tts_dir not in sys.path:
     sys.path.insert(0, qwen_tts_dir)
 
+def _qwen_import_diagnostic(error):
+    """Describe the failing runtime without installing or changing dependencies."""
+    import shlex
+
+    requirements = os.path.join(current_dir, "requirements.txt")
+    if os.name == "nt":
+        command = f'"{sys.executable}" -m pip install -r "{requirements}"'
+        shell = "Windows Command Prompt (cmd.exe)"
+    else:
+        command = f"{shlex.quote(sys.executable)} -m pip install -r {shlex.quote(requirements)}"
+        shell = "terminal"
+    message = (
+        f"❌ [Qwen3-TTS] Critical Import Error: {type(error).__name__}: {error}\n"
+        f"   ComfyUI Python: {sys.executable}\n"
+    )
+    if not os.path.isdir(qwen_tts_dir):
+        return message + f"   Missing bundled directory: {qwen_tts_dir}. Restore the complete custom node repository."
+    return message + (
+        "   Install this node's requirements in the Python environment running ComfyUI.\n"
+        "   'Requirement already satisfied' in another Python environment does not satisfy this runtime.\n"
+        f"   Run in {shell}:\n   {command}\n"
+        "   ComfyUI Desktop: use its built-in terminal for dependency installation. "
+        "If this environment has no pip, use uv pip install --python <ComfyUI Python> "
+        "-r <requirements.txt>, using the paths above.\n"
+        "   Restart ComfyUI after installation. If the error persists, inspect the original traceback "
+        "for incompatible dependencies."
+    )
+
+
+_QWEN_IMPORT_ERROR = None
+_QWEN_IMPORT_DIAGNOSTIC = None
 try:
-    # 1. Try absolute import first (if user installed via pip)
-    import qwen_tts
-    Qwen3TTSModel = qwen_tts.Qwen3TTSModel
-    VoiceClonePromptItem = qwen_tts.VoiceClonePromptItem
-except ImportError:
-    try:
-        # 2. Fallback to local package import (relative or absolute via sys.path)
-        from qwen_tts import Qwen3TTSModel, VoiceClonePromptItem
-    except ImportError as e:
-        import traceback
-        print(f"\n❌ [Qwen3-TTS] Critical Import Error: {e}")
-        if not os.path.exists(qwen_tts_dir):
-            print(f"   Missing directory: {qwen_tts_dir}")
-            print("   Please clone the repository with submodules or ensure 'qwen_tts' folder exists.")
-        else:
-            print("   Traceback for debugging:")
-            traceback.print_exc()
-            print("\n   Common fix: run 'pip install -r requirements.txt' in your ComfyUI environment.")
-        
-        Qwen3TTSModel = None
-        VoiceClonePromptItem = None
+    from qwen_tts import Qwen3TTSModel, VoiceClonePromptItem
+except ImportError as error:
+    import traceback
+
+    _QWEN_IMPORT_ERROR = error
+    _QWEN_IMPORT_DIAGNOSTIC = _qwen_import_diagnostic(error)
+    Qwen3TTSModel = None
+    VoiceClonePromptItem = None
+    print("\n" + _QWEN_IMPORT_DIAGNOSTIC)
+    traceback.print_exc()
 
 
 ATTENTION_OPTIONS = ["auto", "sage_attn", "flash_attn", "sdpa", "eager"]
@@ -417,6 +437,9 @@ def check_and_download_tokenizer():
 def load_qwen_model(model_type: str, model_choice: str, device: str, precision: str, attention: str = "auto", unload_after: bool = False, previous_attention: str = None, custom_model_path: Optional[str] = None):
     """Shared model loading logic with caching and local path priority"""
     global _MODEL_CACHE
+    if Qwen3TTSModel is None:
+        raise RuntimeError(_QWEN_IMPORT_DIAGNOSTIC) from _QWEN_IMPORT_ERROR
+
     
     if previous_attention is not None and previous_attention != attention:
         print(f"🔄 [Qwen3-TTS] Attention changed from '{previous_attention}' to '{attention}', clearing cache...")
@@ -554,12 +577,6 @@ def load_qwen_model(model_type: str, model_choice: str, device: str, precision: 
         else:
             # Fall back to remote loading if download failed
             print(f"🌐 [Qwen3-TTS] Loading remote model: {final_source}")
-
-    if Qwen3TTSModel is None:
-        raise RuntimeError(
-            "❌ [Qwen3-TTS] Model class is not loaded because the 'qwen_tts' package failed to import. "
-            "Please check the ComfyUI console for the detailed 'Critical Import Error' above."
-        )
 
     # Map attention implementation to model loading parameter
     attn_param = None
