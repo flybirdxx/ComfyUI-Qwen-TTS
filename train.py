@@ -285,6 +285,37 @@ class Qwen3TTS_Train_Node:
         entries = self._prepare_dataset(audio_folder, tts_tokenizer, language, unique_id)
         if not entries:
             raise ValueError("No valid audio/txt pairs found in folder.")
+
+        # Long single clips are the classic XPU OOM. The sub-talker expands every codec
+        # frame into num_code_groups tokens (16), so its attention is quadratic in the clip
+        # length. Measured peaks for one sample (1.9B, gradient checkpointing on):
+        # 20s -> 7.5 GiB, 60s -> 8.9 GiB, 150s -> 16.5 GiB (OOM on a 16 GiB card) and a
+        # 431s file ran out of memory during codec encoding. Warn before the run starts.
+        long_files = []
+        for e in entries:
+            frames = len(e.get("audio_codes") or [])
+            if frames and frames / 12.5 > 75.0:
+                long_files.append((os.path.basename(e["audio"]), frames / 12.5))
+        if long_files:
+            detail = ", ".join(f"{n} ({s:.0f}s)" for n, s in sorted(long_files, key=lambda x: -x[1])[:5])
+            msg = (f"long training audio: {detail}. One clip above ~60-75s costs far more "
+                   f"VRAM than the same audio split up (measured: 20s=7.5 GiB, 60s=8.9 GiB, "
+                   f"150s=16.5 GiB peak), and multi-minute files can OOM while encoding. "
+                   f"Split into 20-30s segments with matching transcripts.")
+            logger.warning(f"[Qwen3TTS][train] {msg}")
+            send_training_update(unique_id, {"type": "status", "message": msg})
+
+        # The codec tokenizer is only needed to turn audio into codes. It used to stay on
+        # the accelerator for the whole run, holding ~0.65 GiB that the training pass needs
+        # more (measured: the 12Hz tokenizer checkpoint is 650.7 MB).
+        try:
+            if hasattr(tts_tokenizer, "model"):
+                tts_tokenizer.model.to("cpu")
+            del tts_tokenizer
+            self._empty_cache(train_device)
+            logger.info("[Qwen3TTS][train] codec tokenizer parked on cpu after encoding")
+        except Exception as e:  # noqa: BLE001 - training can continue without this win
+            logger.warning(f"[Qwen3TTS][train] could not park the codec tokenizer: {e}")
             
         train_dataset = TTSDataset(entries, tts_model.processor, tts_model.model.config)
         train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, collate_fn=train_dataset.collate_fn)
@@ -312,6 +343,13 @@ class Qwen3TTS_Train_Node:
             status = self._enable_gradient_checkpointing(model)
             logger.info(f"[Qwen3TTS][train] gradient checkpointing: {status}")
             send_training_update(unique_id, {"type": "status", "message": f"Gradient checkpointing: {status}"})
+        else:
+            # Off by default, but on a 16 GiB card it is usually the difference between
+            # fitting and an XPU OOM: measured 10.0 -> 4.3 GiB peak on the 1.9B model.
+            msg = ("gradient checkpointing is OFF - fine on a large card, but a 1.9B "
+                   "fine-tune needs it when VRAM is tight (measured ~5.7 GiB less peak).")
+            logger.warning(f"[Qwen3TTS][train] {msg}")
+            send_training_update(unique_id, {"type": "status", "message": msg})
         device = next(model.parameters()).device
         
         target_speaker_embedding = None
@@ -344,6 +382,23 @@ class Qwen3TTS_Train_Node:
                 codec_0_labels = batch['codec_0_labels'].to(device)
                 codec_mask = batch['codec_mask'].to(device).to(torch.bfloat16)
                 codec_mask_bool = batch['codec_mask'].to(device).to(torch.bool)
+
+                if step == 0:
+                    # Sequence length is what actually drives the activation footprint; print
+                    # it so a long clip is visible in the log instead of only showing up as
+                    # an XPU OOM a few seconds later.
+                    seq_len = int(input_ids.shape[1])
+                    logger.info(
+                        "[Qwen3TTS][train] epoch %d first batch: seq=%d tokens, ckpt=%s",
+                        epoch + 1, seq_len, bool(gradient_checkpointing),
+                    )
+                    if seq_len > 2000 and not gradient_checkpointing:
+                        msg = (f"long training sample ({seq_len} tokens) with gradient "
+                               f"checkpointing OFF - this is the usual cause of an XPU OOM; "
+                               f"enable gradient checkpointing or split the audio into "
+                               f"20-30s segments.")
+                        logger.warning(f"[Qwen3TTS][train] {msg}")
+                        send_training_update(unique_id, {"type": "status", "message": msg})
 
                 # Speaker Embedding
                 speaker_embedding = model.speaker_encoder(ref_mels).detach()
@@ -565,11 +620,9 @@ class Qwen3TTS_Train_Node:
         PyTorch's own defaults, so their fast paths (fused/foreach) are untouched.
         """
         params = list(params)
-        optimizer_class = AdamW
-        if optimizer_state == "8bit":
-            optimizer_class = self._eight_bit_optimizer(device, unique_id)
-            if optimizer_class is AdamW:
-                optimizer_state = "bf16"
+        optimizer_class = (
+            self._eight_bit_optimizer(device) if optimizer_state == "8bit" else AdamW
+        )
 
         if optimizer_placement == "ram":
             if device == "cpu":
@@ -620,48 +673,39 @@ class Qwen3TTS_Train_Node:
         return optimizer_class(params, lr=lr)
 
     @staticmethod
-    def _eight_bit_optimizer(device, unique_id=None):
-        """8-bit Adam states, picked per backend.
+    def _eight_bit_optimizer(device):
+        """8-bit Adam states: one implementation per device family, no substitution.
 
-        bitsandbytes is used on XPU only. torchao's AdamW8bit is the reference
-        implementation there (and is what CUDA/ROCm/MPS keep using), but on XPU it
-        silently destroys the weights: one real step on the 1.7B model with the
-        segmented dataset turned 315/480 tensors into NaN while the losses and the
-        gradients were still finite (measured 2026-09-20, torch 2.14.0+xpu). The
-        bitsandbytes kernel keeps the same step at 0/480.
+        The `device` choice decides which backend runs; a missing dependency raises with
+        the install hint instead of quietly training with different states.
 
-        Every other device keeps torchao, falls back to bitsandbytes if torchao is
-        missing, and only reports + trains with bf16 states when neither is installed.
+        XPU uses bitsandbytes on purpose. torchao's AdamW8bit is the reference
+        implementation for CUDA/ROCm/MPS/CPU, but on XPU it silently destroys the
+        weights: one real step on the 1.7B model with the segmented dataset turned
+        315/480 tensors into NaN while the loss and every gradient were still finite
+        (measured 2026-09-20, torch 2.14.0+xpu). The bitsandbytes kernel keeps the same
+        step at 0/480.
         """
-        if device != "xpu":
+        if device == "xpu":
             try:
-                from torchao.optim import AdamW8bit
-
-                return AdamW8bit
+                from bitsandbytes.optim import AdamW8bit
             except Exception as e:  # noqa: BLE001
-                logger.info("[Qwen3TTS][train] torchao 8-bit optimizer unavailable (%s)", e)
-                try:
-                    from bitsandbytes.optim import AdamW8bit as BnbAdamW8bit
-
-                    return BnbAdamW8bit
-                except Exception as e2:  # noqa: BLE001
-                    msg = (f"no 8-bit optimizer backend is installed for {device} "
-                           f"(torchao: {e}; bitsandbytes: {e2}); using bf16 states.")
-                    logger.warning("[Qwen3TTS][train] %s", msg)
-                    send_training_update(unique_id, {"type": "status", "message": msg})
-                    return AdamW
-        try:
-            from bitsandbytes.optim import AdamW8bit as BnbAdamW8bit
-
+                raise RuntimeError(
+                    "optimizer_state=8bit on XPU needs bitsandbytes "
+                    f"(pip install bitsandbytes); torchao's 8-bit optimizer is not usable "
+                    f"on XPU. Import failed: {e}"
+                ) from e
             logger.info("[Qwen3TTS][train] 8-bit states via bitsandbytes on XPU")
-            return BnbAdamW8bit
-        except Exception as e:  # noqa: BLE001 - report and keep training
-            msg = (f"8-bit optimizer states need bitsandbytes on XPU (torchao's 8-bit "
-                   f"path turns this model into NaN); not usable here ({e}), "
-                   f"falling back to bf16 states.")
-            logger.warning("[Qwen3TTS][train] %s", msg)
-            send_training_update(unique_id, {"type": "status", "message": msg})
-            return AdamW
+            return AdamW8bit
+        try:
+            from torchao.optim import AdamW8bit
+        except Exception as e:  # noqa: BLE001
+            raise RuntimeError(
+                f"optimizer_state=8bit on {device} needs torchao (pip install torchao); "
+                f"import failed: {e}"
+            ) from e
+        logger.info("[Qwen3TTS][train] 8-bit states via torchao on %s", device)
+        return AdamW8bit
 
     @staticmethod
     def _clip_gradients(model, optimizer, max_norm=1.0):
