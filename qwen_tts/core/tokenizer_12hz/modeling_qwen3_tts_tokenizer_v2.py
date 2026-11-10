@@ -981,8 +981,28 @@ class Qwen3TTSTokenizerV2Decoder(Qwen3TTSTokenizerV2DecoderPreTrainedModel):
         return torch.cat(wavs, dim=-1)
 
 
+# transformers >= 5.21 nests Mimi's halves under `encoder` / `decoder`, makes `upsample` and
+# `decoder_transformer` read-only properties, and renames the flat checkpoint keys only for
+# classes it knows. On that layout, build the encoder without a decoder and register
+# MimiModel's encoder renamings for this class, so the 12Hz tokenizer's weights load.
+_MIMI_NESTED = isinstance(getattr(MimiModel, "upsample", None), property)
+if _MIMI_NESTED:
+    from transformers.conversion_mapping import WeightRenaming, register_checkpoint_conversion_mapping
+    register_checkpoint_conversion_mapping("Qwen3TTSTokenizerV2Encoder", [
+        WeightRenaming(source_patterns=r"^encoder\.layers", target_patterns="encoder.encoder.layers"),
+        WeightRenaming(source_patterns=r"^encoder_transformer\.", target_patterns="encoder.encoder_transformer."),
+        WeightRenaming(source_patterns=r"^downsample\.", target_patterns="encoder.downsample."),
+    ], overwrite=True)
+
+
 class Qwen3TTSTokenizerV2Encoder(MimiModel):
     def __init__(self, config: MimiConfig):
+        if _MIMI_NESTED:
+            config.decoder_config = None
+            super().__init__(config)
+            self.config = config
+            self.post_init()
+            return
         super().__init__(config)
         self.config = config
 
